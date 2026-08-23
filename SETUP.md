@@ -13,19 +13,23 @@ Do this once on a laptop. After that everything works from your phone.
 2. **Extensions → Apps Script**. Delete the placeholder code.
 3. Paste in all of `Code.gs`.
 4. At the top of the file, fill in:
-   - `API_KEY` — invent a random string. You'll paste the same one into `index.html`.
    - `TELEGRAM_TOKEN` / `TELEGRAM_CHAT_ID` — see step 4 below, or leave the
      placeholders if you're skipping Telegram for now.
-   - `APP_URL` — your GitHub Pages URL from step 3.
+   - `APP_URL` — the `/exec` URL from step 6, once you have it.
 5. Select `firstTimeSetup` in the function dropdown → **Run**. Approve the permission
    prompt. This creates the `Schedule` and `Settings` tabs and generates the next few days.
 6. **Deploy → New deployment → Web app.**
    - Execute as: **Me**
-   - Who has access: **Anyone**
-   - Deploy, then copy the `/exec` URL.
+   - Who has access: **Only myself**
+   - Deploy, then copy the `/exec` URL. That URL *is* the app.
 
-> "Anyone" is required because your phone's browser calls this URL without a Google
-> login. The `API_KEY` is what actually keeps strangers out, so make it long.
+> **There is no API key, deliberately.** An earlier version shipped a shared secret
+> in `index.html` and deployed for "Anyone". That can't work: `index.html` is sent to
+> the browser, so anyone who loaded the page could read the key and then read and
+> write the schedule. The app is now served by Apps Script itself via `HtmlService`,
+> the deployment is restricted to **Only myself**, and Google authenticates you before
+> any code runs. Do not set access back to "Anyone" — with no key in the code, that
+> would leave the schedule open to anyone with the URL.
 
 ---
 
@@ -45,16 +49,23 @@ field at the top, which is easier.
 
 ---
 
-## 3. The app on GitHub Pages
+## 3. The app on your phone
 
-1. Create a repo, e.g. `study-planner`.
-2. Add `index.html` to the root.
-3. In `index.html`, set:
-   - `API_URL` → the `/exec` URL from step 1.6
-   - `API_KEY` → the same string you put in `Code.gs`
-4. **Settings → Pages → Source: main branch, / (root)**. Save.
-5. Your app is at `https://YOURNAME.github.io/study-planner/`.
-6. Open it on your phone and **Add to Home Screen** — it behaves like an app from there.
+`index.html` is part of the Apps Script project — `doGet` serves it with
+`HtmlService`, and the page talks to the backend over `google.script.run`, which
+carries your Google identity. So there is no separate host, no `API_URL`, and no
+`API_KEY` to keep in sync.
+
+1. Open the `/exec` URL from step 1.6 on your phone, signed in to the Google
+   account that owns the script.
+2. **Add to Home Screen** — it behaves like an app from there.
+
+> If the phone has several Google accounts, the `/exec` link may open under the
+> wrong one and show "You need access". Open it from the right account, or append
+> `/u/0/` style account selection via the Google account switcher.
+
+The GitHub repo is now just a source backup — GitHub Pages is intentionally
+disabled, because a static public page cannot hold a credential.
 
 ---
 
