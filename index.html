@@ -74,6 +74,9 @@ h1{
   background:var(--surface);border:1px solid var(--line);
   border-radius:var(--radius);padding:10px 12px;margin:12px 0 4px
 }
+/* display:flex above beats the UA stylesheet's [hidden]{display:none}, so the
+   bar showed an empty --:-- before the first render. Restore hidden. */
+.startbar[hidden]{display:none}
 .startbar label{font-size:12px;color:var(--muted);flex:1}
 .startbar input{
   background:var(--surface-2);border:1px solid var(--line);color:var(--text);
@@ -221,6 +224,10 @@ button.ghost:active{background:var(--surface-2)}
 // No URL and no key. This page is served by the Apps Script project itself,
 // and google.script.run calls back into it over an already-authenticated
 // channel — Google has verified the caller is the owner before the page loads.
+
+// doGet inlines the schedule here, so the timetable renders immediately with
+// no network round trip. null only if the server hit an error building it.
+const BOOTSTRAP = <?!= bootstrap ?>;
 
 // ---------------------------------------------------------------- state
 let state = { days: [], today: null, settings: {}, selected: null };
@@ -519,11 +526,18 @@ async function load(){
     absorb(r.data);
     render();
   }catch(err){
-    content.innerHTML = '<div class="msg">Can\'t reach the schedule. Open the app from its Apps Script /exec URL while signed in to the Google account that owns the script.</div>';
+    content.innerHTML = '<div class="msg">Couldn\'t refresh: ' + err + '</div>';
   }
 }
 
-load();
+// First paint comes from the inlined data — no waiting on the network.
+// load() is only for the Refresh button and for the error fallback.
+if(BOOTSTRAP && BOOTSTRAP.days){
+  absorb(BOOTSTRAP);
+  render();
+}else{
+  load();
+}
 setInterval(() => { const r = $('rail'); if(r) { const d = dayById(state.selected); const old = r.querySelector('.nowline'); if(old) old.remove(); renderNowLine(r, d); } }, 60000);
 </script>
 </body>
