@@ -218,8 +218,9 @@ button.ghost:active{background:var(--surface-2)}
 
 <script>
 // ---------------------------------------------------------------- config
-const API_URL = 'https://script.google.com/macros/s/AKfycbxTMZCLEcm9SztlIWJIwHN-fG1j49nb3-xy_5PAHnqyNT7meJ4R_hoc7upkiD6tqJS8Kw/exec';
-const API_KEY = 'G5vi9_n9-9mlsRvJlHWJywxdXSNT5Xc9'; // must match Code.gs
+// No URL and no key. This page is served by the Apps Script project itself,
+// and google.script.run calls back into it over an already-authenticated
+// channel — Google has verified the caller is the owner before the page loads.
 
 // ---------------------------------------------------------------- state
 let state = { days: [], today: null, settings: {}, selected: null };
@@ -236,19 +237,30 @@ function toast(text){
 }
 
 // ---------------------------------------------------------------- api
-async function apiGet(){
-  const res = await fetch(API_URL + '?key=' + encodeURIComponent(API_KEY));
-  return res.json();
-}
-async function apiPost(payload){
-  // text/plain avoids a CORS preflight, which Apps Script can't answer.
-  const res = await fetch(API_URL, {
-    method:'POST',
-    headers:{'Content-Type':'text/plain;charset=utf-8'},
-    body: JSON.stringify(Object.assign({key:API_KEY}, payload))
+/**
+ * google.script.run is callback-based and one call at a time per handler, so
+ * wrap it in a promise. The server functions throw on failure, which lands in
+ * withFailureHandler — hence the {ok,data,error} shape the callers already use.
+ */
+function call(fn, ...args){
+  return new Promise(resolve => {
+    google.script.run
+      .withSuccessHandler(data => resolve({ok:true, data:data}))
+      .withFailureHandler(err => resolve({ok:false, error:String(err && err.message || err)}))
+      [fn](...args);
   });
-  return res.json();
 }
+
+const apiGet  = ()        => call('apiRead');
+const apiPost = payload => {
+  switch(payload.action){
+    case 'setDone':  return call('apiSetDone', payload.id, payload.done);
+    case 'reorder':  return call('apiReorder', payload.date, payload.orderedIds);
+    case 'setStart': return call('apiSetStart', payload.field, payload.value);
+    case 'replan':   return call('apiReplan', payload.date);
+    default:         return Promise.resolve({ok:false, error:'unknown action'});
+  }
+};
 
 // ---------------------------------------------------------------- render
 function dayById(id){ return state.days.find(d => d.date === id); }
@@ -507,7 +519,7 @@ async function load(){
     absorb(r.data);
     render();
   }catch(err){
-    content.innerHTML = '<div class="msg">Can\'t reach the schedule. Check the API URL in index.html, and that the Apps Script Web App is deployed for "Anyone".</div>';
+    content.innerHTML = '<div class="msg">Can\'t reach the schedule. Open the app from its Apps Script /exec URL while signed in to the Google account that owns the script.</div>';
   }
 }
 
