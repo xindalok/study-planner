@@ -96,10 +96,17 @@ h1{
 
 /* ---------- the rail ---------- */
 .rail{position:relative;margin:16px 0 0;padding-left:48px}
+/* A group is one focus block plus the break that follows it. Groups are what
+   you drag; the break travels with its block so you can never strand a break
+   or end up with two in a row. Tighter gap inside a group than between them,
+   so the pairing is visible. */
+.group{margin-bottom:9px}
+.group:last-child{margin-bottom:0}
 .block{
   position:relative;display:flex;align-items:stretch;
-  margin-bottom:3px;touch-action:pan-y
+  margin-bottom:2px;touch-action:pan-y
 }
+.block:last-child{margin-bottom:0}
 /* the hour gutter: each block carries its own true start time, and a rule
    runs across at every block boundary — heights are not a linear time scale,
    so a fixed hourly grid would drift away from the blocks. */
@@ -163,10 +170,10 @@ h1{
   background:currentColor;opacity:.5;
   box-shadow:0 -5px 0 currentColor,0 5px 0 currentColor
 }
-.block.dragging{z-index:20}
-.block.dragging .body{box-shadow:0 8px 22px rgba(43,42,92,.22);border-color:var(--ink)}
-.rail.reordering .block{transition:transform .16s ease}
-.rail.reordering .block.dragging{transition:none}
+.group.dragging{z-index:20}
+.group.dragging .body{box-shadow:0 8px 22px rgba(43,42,92,.22);border-color:var(--ink)}
+.rail.reordering .group{transition:transform .16s ease}
+.rail.reordering .group.dragging{transition:none}
 
 /* now marker */
 .nowline{
@@ -292,6 +299,25 @@ function blockHeight(b){
   return Math.max(MIN_GRAB, b.duration * PX_PER_MIN);
 }
 
+/**
+ * A focus block and the break immediately after it form one draggable group,
+ * so dragging a study slot carries its break along. A break with no focus
+ * block before it stands alone — that shouldn't occur in a generated day, but
+ * a hand-reordered one could produce it and it must still render.
+ */
+function buildGroups(blocks){
+  const groups = [];
+  for(let i = 0; i < blocks.length; i++){
+    const g = [blocks[i]];
+    if(blocks[i].kind === 'focus' && blocks[i+1] && blocks[i+1].kind !== 'focus'){
+      g.push(blocks[i+1]);
+      i++;
+    }
+    groups.push(g);
+  }
+  return groups;
+}
+
 function renderTabs(){
   const el = $('days');
   el.innerHTML = '';
@@ -387,12 +413,13 @@ function blockEl(b, editable, isHourStart){
     body.onkeydown = e => { if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); toggle(); } };
   }
 
-  if(editable){
+  // Only focus blocks get a grip. Breaks are carried by the block above them,
+  // so an independent break handle would just be a way to break the pairing.
+  if(editable && b.kind === 'focus'){
     const grip = document.createElement('div');
     grip.className = 'grip';
-    grip.setAttribute('aria-label','Drag to reorder');
+    grip.setAttribute('aria-label','Drag to reorder ' + b.task + ' and its break');
     grip.innerHTML = '<span></span>';
-    attachDrag(grip, el);
     body.appendChild(grip);
   }
 
@@ -462,11 +489,19 @@ function render(){
 
   const editable = day.date >= state.today;
   let lastHour = -1;
-  day.blocks.forEach(b => {
-    const hour = Number(b.start.slice(0,2));
-    const isHourStart = hour !== lastHour;
-    lastHour = hour;
-    rail.appendChild(blockEl(b, editable, isHourStart));
+  buildGroups(day.blocks).forEach(group => {
+    const g = document.createElement('div');
+    g.className = 'group';
+    group.forEach(b => {
+      const hour = Number(b.start.slice(0,2));
+      const isHourStart = hour !== lastHour;
+      lastHour = hour;
+      g.appendChild(blockEl(b, editable, isHourStart));
+    });
+    // the grip lives on the focus block but drags the whole group
+    const grip = g.querySelector('.grip');
+    if(grip) attachDrag(grip, g);
+    rail.appendChild(g);
   });
   content.appendChild(rail);
   renderNowLine(rail, day);
@@ -509,15 +544,15 @@ function render(){
  * Listeners live on window so nothing depends on capture surviving at all.
  */
 function attachDrag(grip, el){
-  let rail=null, items=[], dragIdx=-1, gap=3, dy=0, moved=false;
+  let rail=null, items=[], dragIdx=-1, gap=9, dy=0, moved=false;
 
   const measure = () => {
     items = [...rail.children]
-      .filter(n => n.classList.contains('block'))
+      .filter(n => n.classList.contains('group'))
       .map(n => ({ el:n, top:n.offsetTop, h:n.offsetHeight }));
     gap = items.length > 1
       ? Math.max(0, items[1].top - (items[0].top + items[0].h))
-      : 3;
+      : 9;
     dragIdx = items.findIndex(i => i.el === el);
   };
 
@@ -574,7 +609,9 @@ function attachDrag(grip, el){
     if(!moved) return;                       // a tap on the grip, not a drag
     if(order.every((v,i) => v === i)) return; // dropped back where it started
 
-    const ids = order.map(i => items[i].el.dataset.id);
+    // flatten groups back to the flat block order the sheet stores
+    const ids = order.flatMap(i =>
+      [...items[i].el.querySelectorAll('.block')].map(n => n.dataset.id));
     toast('Saving order…');
     const r = await apiPost({action:'reorder', date: rail.dataset.date, orderedIds: ids});
     if(r.ok){ absorb(r.data); render(); toast('Times updated'); }
