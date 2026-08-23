@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#14121C">
+<title>Tonight</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#14121C;
+  --surface:#1E1B2A;
+  --surface-2:#2A2637;
+  --line:#332E44;
+  --text:#EDE9F2;
+  --muted:#8B839F;
+  --appdev:#7BE0C4;
+  --cdl:#FFB55C;
+  --korean:#FF8FA3;
+  --now:#FF6B6B;
+  --radius:10px;
+  --min:2.4px;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+body{
+  background:var(--ink);
+  color:var(--text);
+  font-family:'Inter',system-ui,-apple-system,sans-serif;
+  font-size:15px;
+  line-height:1.45;
+  padding:0 0 64px;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:560px;margin:0 auto;padding:0 16px}
+
+/* ---------- header ---------- */
+header{padding:24px 0 12px}
+.kicker{
+  font-family:'JetBrains Mono',monospace;
+  font-size:11px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--muted);margin:0 0 6px
+}
+h1{
+  font-family:'Space Grotesk',sans-serif;
+  font-size:30px;font-weight:700;letter-spacing:-.02em;
+  margin:0 0 2px
+}
+.sub{color:var(--muted);font-size:13px;margin:0}
+
+/* ---------- day tabs ---------- */
+.days{
+  display:flex;gap:6px;overflow-x:auto;padding:14px 0 6px;
+  scrollbar-width:none;-ms-overflow-style:none
+}
+.days::-webkit-scrollbar{display:none}
+.day-tab{
+  flex:0 0 auto;background:var(--surface);border:1px solid var(--line);
+  color:var(--muted);border-radius:999px;padding:7px 14px;
+  font-size:12px;font-weight:500;cursor:pointer;white-space:nowrap;
+  font-family:'JetBrains Mono',monospace;letter-spacing:.02em;
+  transition:background .15s,color .15s,border-color .15s
+}
+.day-tab[aria-selected="true"]{
+  background:var(--text);color:var(--ink);border-color:var(--text);font-weight:600
+}
+.day-tab.past{opacity:.55}
+
+/* ---------- start time control ---------- */
+.startbar{
+  display:flex;align-items:center;gap:10px;
+  background:var(--surface);border:1px solid var(--line);
+  border-radius:var(--radius);padding:10px 12px;margin:12px 0 4px
+}
+.startbar label{font-size:12px;color:var(--muted);flex:1}
+.startbar input{
+  background:var(--surface-2);border:1px solid var(--line);color:var(--text);
+  font-family:'JetBrains Mono',monospace;font-size:14px;
+  border-radius:6px;padding:6px 8px;width:96px
+}
+
+/* ---------- the rail ---------- */
+.rail{position:relative;margin:18px 0 0;padding-left:56px}
+.rail::before{
+  content:'';position:absolute;left:52px;top:0;bottom:0;width:1px;
+  background:var(--line)
+}
+.block{
+  position:relative;display:flex;align-items:stretch;
+  margin-bottom:4px;touch-action:pan-y
+}
+.block .time{
+  position:absolute;left:-56px;top:0;width:46px;text-align:right;
+  font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted);
+  padding-top:2px;letter-spacing:-.02em
+}
+.body{
+  flex:1;background:var(--surface);border:1px solid var(--line);
+  border-radius:var(--radius);border-left-width:3px;
+  display:flex;align-items:center;gap:10px;padding:0 10px 0 12px;
+  min-height:26px;overflow:hidden
+}
+.block[data-subject="Vibecode App Dev"] .body{border-left-color:var(--appdev)}
+.block[data-subject="Fundamentals (JS/React)"] .body{border-left-color:#9BE0FF}
+.block[data-subject="Digital Cloud Leader"] .body{border-left-color:var(--cdl)}
+.block[data-subject="Korean"] .body{border-left-color:var(--korean)}
+
+.block.break .body{
+  background:transparent;border-style:dashed;border-left-width:1px;
+  border-left-color:var(--line)
+}
+.block.break .label{color:var(--muted);font-size:12px}
+
+.label{flex:1;font-size:14px;font-weight:500;letter-spacing:-.01em}
+.dur{
+  font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted);
+  flex:0 0 auto
+}
+
+/* check control */
+.check{
+  flex:0 0 auto;width:22px;height:22px;border-radius:6px;
+  border:1.5px solid var(--line);background:transparent;
+  display:grid;place-items:center;cursor:pointer;padding:0;
+  transition:background .15s,border-color .15s
+}
+.check svg{width:12px;height:12px;stroke:var(--ink);stroke-width:3;
+  fill:none;opacity:0;transition:opacity .15s}
+.block.done .check{background:var(--appdev);border-color:var(--appdev)}
+.block[data-subject="Digital Cloud Leader"].done .check{background:var(--cdl);border-color:var(--cdl)}
+.block[data-subject="Korean"].done .check{background:var(--korean);border-color:var(--korean)}
+.block.done .check svg{opacity:1}
+.block.done .label{color:var(--muted);text-decoration:line-through;text-decoration-thickness:1px}
+
+/* drag grip */
+.grip{
+  flex:0 0 auto;width:22px;align-self:stretch;cursor:grab;
+  display:grid;place-items:center;touch-action:none;
+  margin-right:-4px
+}
+.grip span{
+  display:block;width:11px;height:1px;background:var(--line);
+  box-shadow:0 4px 0 var(--line),0 -4px 0 var(--line)
+}
+.block.dragging{z-index:20;opacity:.94}
+.block.dragging .body{
+  border-color:var(--muted);
+  box-shadow:0 10px 28px rgba(0,0,0,.5)
+}
+.rail.reordering .block{transition:transform .16s ease}
+.rail.reordering .block.dragging{transition:none}
+
+/* now marker */
+.nowline{
+  position:absolute;left:52px;right:0;height:1px;background:var(--now);
+  pointer-events:none;z-index:10
+}
+.nowline::before{
+  content:'';position:absolute;left:-4px;top:-3.5px;
+  width:8px;height:8px;border-radius:50%;background:var(--now)
+}
+.nowline span{
+  position:absolute;right:0;top:-16px;
+  font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--now);
+  letter-spacing:.08em
+}
+
+/* ---------- footer / states ---------- */
+.summary{
+  display:flex;gap:14px;margin:20px 0 0;padding-top:14px;
+  border-top:1px solid var(--line);font-size:12px;color:var(--muted);
+  font-family:'JetBrains Mono',monospace;flex-wrap:wrap
+}
+.summary b{color:var(--text);font-weight:600}
+.actions{display:flex;gap:8px;margin-top:16px}
+button.ghost{
+  background:var(--surface);border:1px solid var(--line);color:var(--muted);
+  border-radius:8px;padding:9px 14px;font-size:13px;cursor:pointer;
+  font-family:inherit
+}
+button.ghost:active{background:var(--surface-2)}
+.msg{
+  padding:28px 16px;text-align:center;color:var(--muted);font-size:14px;
+  border:1px dashed var(--line);border-radius:var(--radius);margin-top:20px
+}
+.toast{
+  position:fixed;left:50%;bottom:22px;transform:translateX(-50%) translateY(90px);
+  background:var(--surface-2);border:1px solid var(--line);color:var(--text);
+  padding:9px 16px;border-radius:999px;font-size:13px;
+  transition:transform .22s cubic-bezier(.2,.8,.3,1);z-index:100
+}
+.toast.show{transform:translateX(-50%) translateY(0)}
+:focus-visible{outline:2px solid var(--appdev);outline-offset:2px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <p class="kicker" id="kicker">Study planner</p>
+    <h1 id="title">Loading</h1>
+    <p class="sub" id="subtitle">Fetching your schedule…</p>
+  </header>
+
+  <div class="days" id="days" role="tablist"></div>
+
+  <div class="startbar" id="startbar" hidden>
+    <label for="startInput" id="startLabel">Start time</label>
+    <input type="time" id="startInput">
+  </div>
+
+  <div id="content"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ---------------------------------------------------------------- config
+const API_URL = 'https://script.google.com/macros/s/AKfycbxTMZCLEcm9SztlIWJIwHN-fG1j49nb3-xy_5PAHnqyNT7meJ4R_hoc7upkiD6tqJS8Kw/exec';
+const API_KEY = 'G5vi9_n9-9mlsRvJlHWJywxdXSNT5Xc9'; // must match Code.gs
+
+// ---------------------------------------------------------------- state
+let state = { days: [], today: null, settings: {}, selected: null };
+
+const $ = id => document.getElementById(id);
+const content = $('content');
+
+function toast(text){
+  const t = $('toast');
+  t.textContent = text;
+  t.classList.add('show');
+  clearTimeout(t._t);
+  t._t = setTimeout(()=>t.classList.remove('show'), 1800);
+}
+
+// ---------------------------------------------------------------- api
+async function apiGet(){
+  const res = await fetch(API_URL + '?key=' + encodeURIComponent(API_KEY));
+  return res.json();
+}
+async function apiPost(payload){
+  // text/plain avoids a CORS preflight, which Apps Script can't answer.
+  const res = await fetch(API_URL, {
+    method:'POST',
+    headers:{'Content-Type':'text/plain;charset=utf-8'},
+    body: JSON.stringify(Object.assign({key:API_KEY}, payload))
+  });
+  return res.json();
+}
+
+// ---------------------------------------------------------------- render
+function dayById(id){ return state.days.find(d => d.date === id); }
+
+function renderTabs(){
+  const el = $('days');
+  el.innerHTML = '';
+  state.days.forEach(d => {
+    const b = document.createElement('button');
+    b.className = 'day-tab' + (d.date < state.today ? ' past' : '');
+    b.setAttribute('role','tab');
+    b.setAttribute('aria-selected', String(d.date === state.selected));
+    b.textContent = d.date === state.today ? 'Today'
+      : d.date < state.today ? 'Yesterday'
+      : d.label;
+    b.onclick = () => { state.selected = d.date; render(); };
+    el.appendChild(b);
+  });
+}
+
+function renderHeader(day){
+  const isToday = day.date === state.today;
+  $('kicker').textContent = day.dayType === 'saturday' ? 'Saturday · App Dev only'
+    : day.dayType === 'sunday' ? 'Sunday' : 'Weekday';
+  $('title').textContent = isToday ? 'Tonight' : day.label;
+  const focus = day.blocks.filter(b => b.kind === 'focus');
+  const subs = [...new Set(focus.map(b => b.subject))];
+  const mins = focus.reduce((a,b)=>a+b.duration,0);
+  $('subtitle').textContent = subs.join(' + ') + ' · ' + (mins/60) + 'h of focus';
+}
+
+function renderStartBar(day){
+  const bar = $('startbar');
+  const input = $('startInput');
+  const field = day.dayType === 'saturday' ? 'saturdayStart'
+    : day.dayType === 'sunday' ? 'sundayStart' : 'weekdayStart';
+  bar.hidden = false;
+  $('startLabel').textContent =
+    field === 'weekdayStart' ? 'Weekdays start at'
+    : field === 'saturdayStart' ? 'Saturdays start at' : 'Sundays start at';
+  input.value = day.startTime;
+  input.onchange = async () => {
+    const v = input.value;
+    toast('Saving start time…');
+    const r = await apiPost({action:'setStart', field: field, value: v});
+    if(r.ok){ absorb(r.data); render(); toast('Day starts at ' + v); }
+    else toast('Could not save');
+  };
+}
+
+function blockEl(b, editable){
+  const el = document.createElement('div');
+  el.className = 'block' + (b.kind === 'focus' ? '' : ' break') + (b.done ? ' done' : '');
+  el.dataset.id = b.id;
+  if(b.subject) el.dataset.subject = b.subject;
+  el.style.minHeight = Math.max(26, b.duration * 2.4) + 'px';
+
+  const time = document.createElement('div');
+  time.className = 'time';
+  time.textContent = b.start;
+  el.appendChild(time);
+
+  const body = document.createElement('div');
+  body.className = 'body';
+
+  const label = document.createElement('div');
+  label.className = 'label';
+  label.textContent = b.task;
+  body.appendChild(label);
+
+  const dur = document.createElement('div');
+  dur.className = 'dur';
+  dur.textContent = b.duration + 'm';
+  body.appendChild(dur);
+
+  if(b.kind === 'focus'){
+    const btn = document.createElement('button');
+    btn.className = 'check';
+    btn.setAttribute('aria-label', (b.done ? 'Mark not done: ' : 'Mark done: ') + b.task);
+    btn.innerHTML = '<svg viewBox="0 0 24 24"><polyline points="4 13 9 18 20 6"/></svg>';
+    btn.onclick = async e => {
+      e.stopPropagation();
+      const next = !el.classList.contains('done');
+      el.classList.toggle('done', next);
+      const r = await apiPost({action:'setDone', id:b.id, done:next});
+      if(!r.ok){ el.classList.toggle('done', !next); toast('Could not save'); }
+    };
+    body.appendChild(btn);
+  }
+
+  if(editable){
+    const grip = document.createElement('div');
+    grip.className = 'grip';
+    grip.setAttribute('aria-label','Drag to reorder');
+    grip.innerHTML = '<span></span>';
+    attachDrag(grip, el);
+    body.appendChild(grip);
+  }
+
+  el.appendChild(body);
+  return el;
+}
+
+function renderNowLine(rail, day){
+  if(day.date !== state.today) return;
+  const now = new Date();
+  const mins = now.getHours()*60 + now.getMinutes();
+  const blocks = day.blocks;
+  const [sh,sm] = day.startTime.split(':').map(Number);
+  const startMin = sh*60+sm;
+  const total = blocks.reduce((a,b)=>a+b.duration,0);
+  if(mins < startMin || mins > startMin + total) return;
+
+  const els = [...rail.querySelectorAll('.block')];
+  let acc = startMin;
+  for(let i=0;i<blocks.length;i++){
+    const b = blocks[i];
+    if(mins >= acc && mins < acc + b.duration){
+      const el = els[i];
+      const frac = (mins - acc) / b.duration;
+      const line = document.createElement('div');
+      line.className = 'nowline';
+      line.innerHTML = '<span>NOW</span>';
+      line.style.top = (el.offsetTop + el.offsetHeight * frac) + 'px';
+      rail.appendChild(line);
+      return;
+    }
+    acc += b.duration;
+  }
+}
+
+function renderSummary(day){
+  const focus = day.blocks.filter(b=>b.kind==='focus');
+  const done = focus.filter(b=>b.done).length;
+  const div = document.createElement('div');
+  div.className = 'summary';
+  div.innerHTML =
+    '<div><b>' + done + '/' + focus.length + '</b> focus blocks done</div>' +
+    '<div><b>' + (done*30/60).toFixed(1) + 'h</b> logged</div>' +
+    '<div>ends <b>' + day.blocks[day.blocks.length-1].end + '</b></div>';
+  return div;
+}
+
+function render(){
+  const day = dayById(state.selected) || dayById(state.today) || state.days[0];
+  if(!day){
+    content.innerHTML = '<div class="msg">No schedule yet. Run the setup in Apps Script, then pull to refresh.</div>';
+    return;
+  }
+  state.selected = day.date;
+  renderTabs();
+  renderHeader(day);
+  renderStartBar(day);
+
+  content.innerHTML = '';
+  const rail = document.createElement('div');
+  rail.className = 'rail';
+  rail.id = 'rail';
+  rail.dataset.date = day.date;
+
+  const editable = day.date >= state.today;
+  day.blocks.forEach(b => rail.appendChild(blockEl(b, editable)));
+  content.appendChild(rail);
+  renderNowLine(rail, day);
+  content.appendChild(renderSummary(day));
+
+  const actions = document.createElement('div');
+  actions.className = 'actions';
+  if(editable){
+    const rb = document.createElement('button');
+    rb.className = 'ghost';
+    rb.textContent = 'Reset this day';
+    rb.onclick = async () => {
+      if(!confirm('Rebuild this day from the template? Check-offs and order are cleared.')) return;
+      toast('Rebuilding…');
+      const r = await apiPost({action:'replan', date:day.date});
+      if(r.ok){ absorb(r.data); render(); toast('Day rebuilt'); }
+    };
+    actions.appendChild(rb);
+  }
+  const refresh = document.createElement('button');
+  refresh.className = 'ghost';
+  refresh.textContent = 'Refresh';
+  refresh.onclick = load;
+  actions.appendChild(refresh);
+  content.appendChild(actions);
+}
+
+// ---------------------------------------------------------------- drag to reorder
+function attachDrag(grip, el){
+  let startY=0, rail=null, sibs=[], dragging=false;
+
+  grip.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    grip.setPointerCapture(e.pointerId);
+    rail = el.parentElement;
+    rail.classList.add('reordering');
+    sibs = [...rail.querySelectorAll('.block')];
+    startY = e.clientY;
+    dragging = true;
+    el.classList.add('dragging');
+  });
+
+  grip.addEventListener('pointermove', e => {
+    if(!dragging) return;
+    const dy = e.clientY - startY;
+    el.style.transform = 'translateY(' + dy + 'px)';
+
+    const mid = el.getBoundingClientRect().top + el.offsetHeight/2;
+    for(const other of sibs){
+      if(other === el) continue;
+      const r = other.getBoundingClientRect();
+      const otherMid = r.top + r.height/2;
+      if(mid < otherMid && el.compareDocumentPosition(other) & Node.DOCUMENT_POSITION_FOLLOWING){
+        rail.insertBefore(el, other);
+        startY = e.clientY; el.style.transform = '';
+        break;
+      }
+      if(mid > otherMid && el.compareDocumentPosition(other) & Node.DOCUMENT_POSITION_PRECEDING){
+        rail.insertBefore(el, other.nextSibling);
+        startY = e.clientY; el.style.transform = '';
+        break;
+      }
+    }
+  });
+
+  const end = async e => {
+    if(!dragging) return;
+    dragging = false;
+    el.classList.remove('dragging');
+    el.style.transform = '';
+    rail.classList.remove('reordering');
+
+    const ids = [...rail.querySelectorAll('.block')].map(n => n.dataset.id);
+    toast('Saving order…');
+    const r = await apiPost({action:'reorder', date: rail.dataset.date, orderedIds: ids});
+    if(r.ok){ absorb(r.data); render(); toast('Times updated'); }
+    else { toast('Could not save order'); load(); }
+  };
+  grip.addEventListener('pointerup', end);
+  grip.addEventListener('pointercancel', end);
+}
+
+// ---------------------------------------------------------------- boot
+function absorb(data){
+  state.days = data.days;
+  state.today = data.today;
+  state.settings = data.settings;
+  if(!state.selected) state.selected = data.today;
+}
+
+async function load(){
+  try{
+    const r = await apiGet();
+    if(!r.ok){ content.innerHTML = '<div class="msg">' + r.error + '</div>'; return; }
+    absorb(r.data);
+    render();
+  }catch(err){
+    content.innerHTML = '<div class="msg">Can\'t reach the schedule. Check the API URL in index.html, and that the Apps Script Web App is deployed for "Anyone".</div>';
+  }
+}
+
+load();
+setInterval(() => { const r = $('rail'); if(r) { const d = dayById(state.selected); const old = r.querySelector('.nowline'); if(old) old.remove(); renderNowLine(r, d); } }, 60000);
+</script>
+</body>
+</html>

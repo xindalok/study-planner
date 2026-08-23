@@ -1,0 +1,6 @@
+# Code.gs holds the Telegram bot token after setup. This repo is public
+# (GitHub Pages). Never commit it.
+Code.gs
+appsscript.json
+.clasp.json
+.claspignore
