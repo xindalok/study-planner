@@ -286,10 +286,10 @@ button.ghost:active{background:#F7E9EE}
 // no network round trip. null only if the server hit an error building it.
 const BOOTSTRAP = <?!= bootstrap ?>;
 
-// 2px/min: a 30-minute focus block is 60px and a 10-minute break 20px, which
-// is the smallest a break can be and still hold a readable label. Heights stay
-// strictly proportional so everything sits on the gridlines.
-const PX_PER_MIN = 2;
+// 1.5px/min keeps the whole evening on one screen — at 2px/min the second
+// subject fell below the fold. Breaks are 15px, which is legible now that they
+// have a solid fill. Heights stay strictly proportional to the gridlines.
+const PX_PER_MIN = 1.5;
 
 // The visible window per day type. Times after midnight are written as they
 // read on a clock; toMin() rolls them past 24h so the canvas stays continuous.
