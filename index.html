@@ -26,9 +26,6 @@
   --cdl:#FBD9A8;         --cdl-ink:#5C3A05;
   --korean:#F9C6D3;      --korean-ink:#72243E;
 
-  /* every draggable thing is at least this tall, so 10-min breaks stay grabbable */
-  --min-grab:44px;
-  --px-per-min:2;
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;padding:0}
@@ -95,37 +92,33 @@ h1{
 }
 
 /* ---------- the rail ---------- */
+/* The rail is a fixed time canvas: every half hour of the window is drawn,
+   whether or not anything is scheduled in it. Blocks are positioned by clock
+   time, so heights must be strictly proportional to duration or they would
+   drift off the gridlines. */
 .rail{position:relative;margin:16px 0 0;padding-left:48px}
-/* A group is one focus block plus the break that follows it. Groups are what
-   you drag; the break travels with its block so you can never strand a break
-   or end up with two in a row. Tighter gap inside a group than between them,
-   so the pairing is visible. */
-.group{margin-bottom:9px}
-.group:last-child{margin-bottom:0}
-.block{
-  position:relative;display:flex;align-items:stretch;
-  margin-bottom:2px;touch-action:pan-y
+.gridline{
+  position:absolute;left:0;right:0;height:1px;background:var(--line-soft);
+  pointer-events:none
 }
-.block:last-child{margin-bottom:0}
-/* the hour gutter: each block carries its own true start time, and a rule
-   runs across at every block boundary — heights are not a linear time scale,
-   so a fixed hourly grid would drift away from the blocks. */
-.block .time{
-  position:absolute;left:-48px;top:0;width:40px;text-align:right;
+.gridline.hour{background:var(--line)}
+.gridline span{
+  position:absolute;left:0;top:-7px;width:40px;text-align:right;
   font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--faint);
-  padding-top:3px;letter-spacing:-.02em
+  letter-spacing:-.02em
 }
-.block.hour .time{color:var(--muted);font-weight:600}
-.block::before{
-  content:'';position:absolute;left:-48px;right:0;top:-2px;height:1px;
-  background:var(--line-soft)
-}
-.block.hour::before{background:var(--line)}
+.gridline.hour span{color:var(--muted);font-weight:600}
 
+/* A group is one focus block plus the break that follows it. Groups are what
+   you drag; the break travels with its block. */
+.group{position:absolute;left:48px;right:0}
+.block{
+  position:relative;display:flex;align-items:stretch;touch-action:pan-y
+}
 .body{
-  flex:1;border-radius:8px;
-  display:flex;align-items:center;gap:8px;padding:6px 10px;
-  min-height:var(--min-grab);overflow:hidden;border:1px solid transparent
+  flex:1;border-radius:6px;
+  display:flex;align-items:center;gap:8px;padding:2px 8px;
+  overflow:hidden;border:1px solid transparent
 }
 .block.focus .body{cursor:pointer}
 .block[data-subject="Vibecode App Dev"] .body{background:var(--appdev);color:var(--appdev-ink)}
@@ -136,7 +129,9 @@ h1{
 .block.break .body{
   background:transparent;border:1px dashed var(--line);color:var(--faint)
 }
-.block.break .label{font-size:12px}
+.block.break .label{font-size:10px;line-height:1}
+.block.break .dur{display:none}
+.block.break .body{padding:0 8px}
 
 /* a gap is time pushed aside by a delay — deliberately empty-looking */
 .block.gap .body{
@@ -144,7 +139,9 @@ h1{
     transparent 0 6px, rgba(226,75,74,.10) 6px 12px);
   border:1px dashed rgba(226,75,74,.45);color:#A33B3A
 }
-.block.gap .label{font-size:11px;font-style:italic}
+.block.gap .label{font-size:10px;font-style:italic;line-height:1}
+.block.gap .dur{display:none}
+.block.gap .body{padding:0 8px}
 
 /* live readout of the delay while dragging */
 .grip[data-hint]::after{
@@ -171,17 +168,16 @@ h1{
 .block.done .label{text-decoration:line-through;text-decoration-thickness:1px;opacity:.7}
 
 /* drag grip */
-/* 44px is the smallest comfortable touch target; the old 20px grip was
-   essentially unhittable with a thumb. touch-action:none here only — the
-   block itself keeps pan-y so the page still scrolls normally. */
+/* 44px wide is the smallest comfortable touch target. Only focus blocks have
+   a grip, and those are 45px tall, so the handle is a full 44x45. touch-action
+   is none here only — the block keeps pan-y so the page still scrolls. */
 .grip{
   flex:0 0 auto;width:44px;align-self:stretch;cursor:grab;
   display:grid;place-items:center;touch-action:none;
-  margin:-6px -10px -6px 0;border-radius:0 8px 8px 0;
+  margin:0 -8px 0 0;border-radius:0 6px 6px 0;
   background:rgba(43,42,92,.06)
 }
 .grip:active{cursor:grabbing;background:rgba(43,42,92,.14)}
-.block.break .grip{background:rgba(43,42,92,.035)}
 .grip span{
   display:block;width:14px;height:2px;border-radius:2px;
   background:currentColor;opacity:.5;
@@ -194,7 +190,7 @@ h1{
 
 /* now marker */
 .nowline{
-  position:absolute;left:-48px;right:0;height:2px;background:var(--now);
+  position:absolute;left:0;right:0;height:2px;background:var(--now);
   pointer-events:none;z-index:10
 }
 .nowline::before{
@@ -266,8 +262,51 @@ button.ghost:active{background:#F7E9EE}
 // no network round trip. null only if the server hit an error building it.
 const BOOTSTRAP = <?!= bootstrap ?>;
 
-const PX_PER_MIN = 2;
-const MIN_GRAB = 44;
+// 1.5px/min makes a 30-minute focus block 45px — comfortably grabbable —
+// while keeping heights strictly proportional so blocks sit on the gridlines.
+const PX_PER_MIN = 1.5;
+
+// The visible window per day type. Times after midnight are written as they
+// read on a clock; toMin() rolls them past 24h so the canvas stays continuous.
+const CANVAS = {
+  weekday:  { from:'18:30', to:'01:00' },
+  saturday: { from:'10:00', to:'00:30' },
+  sunday:   { from:'10:00', to:'00:30' }
+};
+
+const toMin = hhmm => {
+  const [h,m] = hhmm.split(':').map(Number);
+  return h*60 + m;
+};
+const fmtMin = t => {
+  const h = Math.floor(t/60) % 24, m = t % 60;
+  return ('0'+h).slice(-2) + ':' + ('0'+m).slice(-2);
+};
+
+/**
+ * Absolute minute positions for a day, measured on a continuous line that
+ * runs past midnight rather than wrapping. The server sends 'HH:mm' strings
+ * that have already wrapped (23:40 then 00:10), so positions are recomputed
+ * here from the day's start plus cumulative durations instead of parsed back.
+ */
+function layout(day){
+  const c = CANVAS[day.dayType] || CANVAS.weekday;
+  let from = toMin(c.from);
+  let to = toMin(c.to);
+  if(to <= from) to += 1440;               // window crosses midnight
+
+  let cursor = toMin(day.startTime);
+  if(cursor < from) cursor += 1440;        // shouldn't happen, but stay ordered
+  const placed = day.blocks.map(b => {
+    const at = cursor;
+    cursor += b.duration;
+    return { block:b, from:at, to:cursor };
+  });
+
+  // never clip: if a delay pushes the evening past the window, grow it
+  const end = placed.length ? placed[placed.length-1].to : to;
+  return { from:from, to:Math.max(to, Math.ceil(end/30)*30), placed:placed };
+}
 
 // ---------------------------------------------------------------- state
 let state = { days: [], today: null, settings: {}, selected: null };
@@ -314,7 +353,7 @@ const apiPost = payload => {
 function dayById(id){ return state.days.find(d => d.date === id); }
 
 function blockHeight(b){
-  return Math.max(MIN_GRAB, b.duration * PX_PER_MIN);
+  return b.duration * PX_PER_MIN;
 }
 
 const isBreak = k => k === 'short_break' || k === 'long_break';
@@ -390,19 +429,13 @@ function renderStartBar(day){
   };
 }
 
-function blockEl(b, editable, isHourStart){
+function blockEl(b, editable){
   const el = document.createElement('div');
   const kindClass = b.kind === 'focus' ? 'focus' : b.kind === 'gap' ? 'gap' : 'break';
-  el.className = 'block ' + kindClass
-    + (b.done ? ' done' : '') + (isHourStart ? ' hour' : '');
+  el.className = 'block ' + kindClass + (b.done ? ' done' : '');
   el.dataset.id = b.id;
   if(b.subject) el.dataset.subject = b.subject;
   el.style.height = blockHeight(b) + 'px';
-
-  const time = document.createElement('div');
-  time.className = 'time';
-  time.textContent = b.start;
-  el.appendChild(time);
 
   const body = document.createElement('div');
   body.className = 'body';
@@ -454,35 +487,23 @@ function blockEl(b, editable, isHourStart){
   return el;
 }
 
+/**
+ * Heights are strictly proportional now, so the marker is placed straight from
+ * the clock rather than interpolated inside a block — it is exact.
+ */
 function renderNowLine(rail, day){
   if(!day || day.date !== state.today) return;
+  const L = layout(day);
   const now = new Date();
-  const mins = now.getHours()*60 + now.getMinutes();
-  const blocks = day.blocks;
-  const [sh,sm] = day.startTime.split(':').map(Number);
-  const startMin = sh*60+sm;
-  const total = blocks.reduce((a,b)=>a+b.duration,0);
-  if(mins < startMin || mins > startMin + total) return;
+  let mins = now.getHours()*60 + now.getMinutes();
+  if(mins < L.from) mins += 1440;            // early hours belong to last night
+  if(mins < L.from || mins > L.to) return;
 
-  const els = [...rail.querySelectorAll('.block')];
-  let acc = startMin;
-  for(let i=0;i<blocks.length;i++){
-    const b = blocks[i];
-    if(mins >= acc && mins < acc + b.duration){
-      const el = els[i];
-      if(!el) return;
-      // interpolate inside the block's *rendered* height, which is not a
-      // linear time scale once a short break is padded to --min-grab
-      const frac = (mins - acc) / b.duration;
-      const line = document.createElement('div');
-      line.className = 'nowline';
-      line.innerHTML = '<span>NOW</span>';
-      line.style.top = (el.offsetTop + el.offsetHeight * frac) + 'px';
-      rail.appendChild(line);
-      return;
-    }
-    acc += b.duration;
-  }
+  const line = document.createElement('div');
+  line.className = 'nowline';
+  line.innerHTML = '<span>NOW</span>';
+  line.style.top = ((mins - L.from) * PX_PER_MIN) + 'px';
+  rail.appendChild(line);
 }
 
 function renderSummary(day){
@@ -515,21 +536,34 @@ function render(){
   rail.dataset.date = day.date;
 
   const editable = day.date >= state.today;
-  let lastHour = -1;
+  const L = layout(day);
+  rail.style.height = ((L.to - L.from) * PX_PER_MIN) + 'px';
+
+  // every half hour of the window, scheduled or not
+  for(let t = L.from; t <= L.to; t += 30){
+    const line = document.createElement('div');
+    line.className = 'gridline' + (t % 60 === 0 ? ' hour' : '');
+    line.style.top = ((t - L.from) * PX_PER_MIN) + 'px';
+    line.innerHTML = '<span>' + fmtMin(t) + '</span>';
+    rail.appendChild(line);
+  }
+
+  // index each block's placement so a group can be positioned by clock time
+  const at = {};
+  L.placed.forEach(p => { at[p.block.id] = p; });
+
   buildGroups(day.blocks).forEach(group => {
     const g = document.createElement('div');
     g.className = 'group';
-    group.forEach(b => {
-      const hour = Number(b.start.slice(0,2));
-      const isHourStart = hour !== lastHour;
-      lastHour = hour;
-      g.appendChild(blockEl(b, editable, isHourStart));
-    });
+    g.style.top = ((at[group[0].id].from - L.from) * PX_PER_MIN) + 'px';
+    group.forEach(b => g.appendChild(blockEl(b, editable)));
+
     // dragging the grip delays this group and everything below it
     const grip = g.querySelector('.grip');
     if(grip){
       const lead = group[0];
-      attachDelay(grip, g, day.date, lead.id, gapBefore(day.blocks, lead.id));
+      attachDelay(grip, g, day.date, lead.id,
+        gapBefore(day.blocks, lead.id), at[lead.id].from);
     }
     rail.appendChild(g);
   });
@@ -574,7 +608,7 @@ const SNAP_MIN = 5;   // delays land on 5-minute boundaries
  * is previewed with transforms and committed once on release, and the
  * listeners live on window so nothing depends on capture surviving.
  */
-function attachDelay(grip, el, date, blockId, currentGap){
+function attachDelay(grip, el, date, blockId, currentGap, startsAt){
   let rail=null, below=[], startY=0, mins=currentGap, moved=false;
 
   // Drag distance converts to minutes at the same scale the blocks are drawn,
@@ -589,7 +623,9 @@ function attachDelay(grip, el, date, blockId, currentGap){
     mins = minutesFor(dy);
     const px = (mins - currentGap) * PX_PER_MIN;
     below.forEach(n => { n.style.transform = 'translateY(' + px + 'px)'; });
-    grip.dataset.hint = mins ? '+' + mins + 'm' : '0';
+    // now that the grid shows real hours, the useful readout is the clock
+    // time this block would land on, not the size of the delay
+    grip.dataset.hint = fmtMin(startsAt - currentGap + mins);
   };
 
   const onUp = async () => {
