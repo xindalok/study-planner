@@ -147,13 +147,21 @@ h1{
 .block.done .label{text-decoration:line-through;text-decoration-thickness:1px;opacity:.7}
 
 /* drag grip */
+/* 44px is the smallest comfortable touch target; the old 20px grip was
+   essentially unhittable with a thumb. touch-action:none here only — the
+   block itself keeps pan-y so the page still scrolls normally. */
 .grip{
-  flex:0 0 auto;width:20px;align-self:stretch;cursor:grab;
-  display:grid;place-items:center;touch-action:none;margin-right:-4px
+  flex:0 0 auto;width:44px;align-self:stretch;cursor:grab;
+  display:grid;place-items:center;touch-action:none;
+  margin:-6px -10px -6px 0;border-radius:0 8px 8px 0;
+  background:rgba(43,42,92,.06)
 }
+.grip:active{cursor:grabbing;background:rgba(43,42,92,.14)}
+.block.break .grip{background:rgba(43,42,92,.035)}
 .grip span{
-  display:block;width:11px;height:1px;background:currentColor;opacity:.45;
-  box-shadow:0 4px 0 currentColor,0 -4px 0 currentColor
+  display:block;width:14px;height:2px;border-radius:2px;
+  background:currentColor;opacity:.5;
+  box-shadow:0 -5px 0 currentColor,0 5px 0 currentColor
 }
 .block.dragging{z-index:20}
 .block.dragging .body{box-shadow:0 8px 22px rgba(43,42,92,.22);border-color:var(--ink)}
@@ -488,59 +496,107 @@ function render(){
 }
 
 // ---------------------------------------------------------------- drag to reorder
+/**
+ * Reorder by dragging the grip.
+ *
+ * The DOM is deliberately NOT touched while dragging. The previous version
+ * called insertBefore() mid-drag, which detaches the dragged element's subtree
+ * — including the grip holding pointer capture — and removing a capturing
+ * element releases the capture, so pointermove stopped firing and the drag
+ * died on the first reorder. Here the blocks are only moved visually with
+ * transforms, and the real order is committed once on release.
+ *
+ * Listeners live on window so nothing depends on capture surviving at all.
+ */
 function attachDrag(grip, el){
-  let startY=0, rail=null, sibs=[], dragging=false;
+  let rail=null, items=[], dragIdx=-1, gap=3, dy=0, moved=false;
 
-  grip.addEventListener('pointerdown', e => {
-    e.preventDefault();
-    e.stopPropagation();
-    grip.setPointerCapture(e.pointerId);
-    rail = el.parentElement;
-    rail.classList.add('reordering');
-    sibs = [...rail.querySelectorAll('.block')];
-    startY = e.clientY;
-    dragging = true;
-    el.classList.add('dragging');
-  });
+  const measure = () => {
+    items = [...rail.children]
+      .filter(n => n.classList.contains('block'))
+      .map(n => ({ el:n, top:n.offsetTop, h:n.offsetHeight }));
+    gap = items.length > 1
+      ? Math.max(0, items[1].top - (items[0].top + items[0].h))
+      : 3;
+    dragIdx = items.findIndex(i => i.el === el);
+  };
 
-  grip.addEventListener('pointermove', e => {
-    if(!dragging) return;
-    const dy = e.clientY - startY;
-    el.style.transform = 'translateY(' + dy + 'px)';
-
-    const mid = el.getBoundingClientRect().top + el.offsetHeight/2;
-    for(const other of sibs){
-      if(other === el) continue;
-      const r = other.getBoundingClientRect();
-      const otherMid = r.top + r.height/2;
-      if(mid < otherMid && el.compareDocumentPosition(other) & Node.DOCUMENT_POSITION_FOLLOWING){
-        rail.insertBefore(el, other);
-        startY = e.clientY; el.style.transform = '';
-        break;
-      }
-      if(mid > otherMid && el.compareDocumentPosition(other) & Node.DOCUMENT_POSITION_PRECEDING){
-        rail.insertBefore(el, other.nextSibling);
-        startY = e.clientY; el.style.transform = '';
-        break;
-      }
+  // Where the dragged block would land, given how far it has moved.
+  // Compared against the other blocks' CURRENT positions, not against a
+  // compacted layout — otherwise a drag of zero distance still displaces the
+  // block, because the neighbour below appears to have slid up into its place.
+  const targetIndex = () => {
+    const rest = items.map((_,i)=>i).filter(i => i !== dragIdx);
+    const centre = items[dragIdx].top + dy + items[dragIdx].h/2;
+    for(let k=0;k<rest.length;k++){
+      const it = items[rest[k]];
+      if(centre < it.top + it.h/2) return k;
     }
-  });
+    return rest.length;
+  };
 
-  const end = async e => {
-    if(!dragging) return;
-    dragging = false;
+  const orderNow = () => {
+    const rest = items.map((_,i)=>i).filter(i => i !== dragIdx);
+    rest.splice(targetIndex(), 0, dragIdx);
+    return rest;
+  };
+
+  // Preview the candidate order by transforming every block to where it
+  // would sit. Heights vary (a padded 10-min break is not a 30-min block),
+  // so positions are recomputed rather than shifted by a fixed amount.
+  const paint = () => {
+    let pos = items[0].top;
+    orderNow().forEach(i => {
+      const it = items[i];
+      it.el.style.transform = (i === dragIdx)
+        ? 'translateY(' + dy + 'px)'
+        : 'translateY(' + (pos - it.top) + 'px)';
+      pos += it.h + gap;
+    });
+  };
+
+  const onMove = e => {
+    dy = e.clientY - startY;
+    if(Math.abs(dy) > 4) moved = true;
+    paint();
+  };
+
+  const onUp = async () => {
+    window.removeEventListener('pointermove', onMove);
+    window.removeEventListener('pointerup', onUp);
+    window.removeEventListener('pointercancel', onUp);
+
+    const order = orderNow();
     el.classList.remove('dragging');
-    el.style.transform = '';
     rail.classList.remove('reordering');
+    items.forEach(it => { it.el.style.transform = ''; });
 
-    const ids = [...rail.querySelectorAll('.block')].map(n => n.dataset.id);
+    if(!moved) return;                       // a tap on the grip, not a drag
+    if(order.every((v,i) => v === i)) return; // dropped back where it started
+
+    const ids = order.map(i => items[i].el.dataset.id);
     toast('Saving order…');
     const r = await apiPost({action:'reorder', date: rail.dataset.date, orderedIds: ids});
     if(r.ok){ absorb(r.data); render(); toast('Times updated'); }
     else { toast('Could not save order'); load(); }
   };
-  grip.addEventListener('pointerup', end);
-  grip.addEventListener('pointercancel', end);
+
+  let startY = 0;
+  grip.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    rail = el.parentElement;
+    measure();
+    if(dragIdx < 0) return;
+    startY = e.clientY;
+    dy = 0;
+    moved = false;
+    el.classList.add('dragging');
+    rail.classList.add('reordering');
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+  });
 }
 
 // ---------------------------------------------------------------- boot
