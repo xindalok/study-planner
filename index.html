@@ -26,6 +26,10 @@
   --cdl:#FBD9A8;         --cdl-ink:#5C3A05;
   --korean:#F9C6D3;      --korean-ink:#72243E;
 
+  /* breaks: solid but deliberately quieter than any subject */
+  --rest:#ECE7F1;        --rest-deep:#DFD8E9;
+  --rest-line:#D9D0E4;   --rest-ink:#6B6480;
+
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;padding:0}
@@ -139,22 +143,25 @@ h1{
 .block[data-subject="Digital Cloud Leader"] .body{background:var(--cdl);color:var(--cdl-ink)}
 .block[data-subject="Korean"] .body{background:var(--korean);color:var(--korean-ink)}
 
+/* Breaks are solid blocks, not gaps. A transparent dashed outline read as
+   empty space, which made the column hard to parse. Quieter than the subject
+   pastels so focus blocks still dominate. */
 .block.break .body{
-  background:transparent;border:1px dashed var(--line);color:var(--faint)
+  background:var(--rest);border:1px solid var(--rest-line);color:var(--rest-ink);
+  padding:0 8px
 }
-.block.break .label{font-size:10px;line-height:1}
-.block.break .dur{display:none}
-.block.break .body{padding:0 8px}
+.block.long_break .body{background:var(--rest-deep)}
+.block.break .label{font-size:11px;font-weight:500;line-height:1}
+.block.break .dur{font-size:10px;opacity:.8}
 
-/* a gap is time pushed aside by a delay — deliberately empty-looking */
+/* a gap is time pushed aside by a delay — a real block, but marked out as
+   time that belongs to no task */
 .block.gap .body{
-  background:repeating-linear-gradient(135deg,
-    transparent 0 6px, rgba(226,75,74,.10) 6px 12px);
-  border:1px dashed rgba(226,75,74,.45);color:#A33B3A
+  background:#FBEBEA;border:1px solid rgba(226,75,74,.35);color:#A33B3A;
+  padding:0 8px
 }
-.block.gap .label{font-size:10px;font-style:italic;line-height:1}
-.block.gap .dur{display:none}
-.block.gap .body{padding:0 8px}
+.block.gap .label{font-size:11px;font-style:italic;line-height:1}
+.block.gap .dur{font-size:10px;opacity:.8}
 
 /* live readout of the delay while dragging */
 .grip[data-hint]::after{
@@ -279,9 +286,10 @@ button.ghost:active{background:#F7E9EE}
 // no network round trip. null only if the server hit an error building it.
 const BOOTSTRAP = <?!= bootstrap ?>;
 
-// 1.5px/min makes a 30-minute focus block 45px — comfortably grabbable —
-// while keeping heights strictly proportional so blocks sit on the gridlines.
-const PX_PER_MIN = 1.5;
+// 2px/min: a 30-minute focus block is 60px and a 10-minute break 20px, which
+// is the smallest a break can be and still hold a readable label. Heights stay
+// strictly proportional so everything sits on the gridlines.
+const PX_PER_MIN = 2;
 
 // The visible window per day type. Times after midnight are written as they
 // read on a clock; toMin() rolls them past 24h so the canvas stays continuous.
@@ -449,7 +457,8 @@ function renderStartBar(day){
 function blockEl(b, editable){
   const el = document.createElement('div');
   const kindClass = b.kind === 'focus' ? 'focus' : b.kind === 'gap' ? 'gap' : 'break';
-  el.className = 'block ' + kindClass + (b.done ? ' done' : '');
+  // also carry the exact kind, so long breaks can read differently from short
+  el.className = 'block ' + kindClass + ' ' + b.kind + (b.done ? ' done' : '');
   el.dataset.id = b.id;
   if(b.subject) el.dataset.subject = b.subject;
   el.style.height = blockHeight(b) + 'px';
