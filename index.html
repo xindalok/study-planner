@@ -88,7 +88,9 @@ h1{
 .startbar input{
   background:var(--paper);border:1px solid var(--line);color:var(--ink);
   font-family:'JetBrains Mono',monospace;font-size:14px;
-  border-radius:6px;padding:5px 8px;width:104px
+  /* wide enough for a 12-hour locale's AM/PM segment, which was being
+     clipped — 07:30 with no meridiem is ambiguous */
+  border-radius:6px;padding:5px 8px;width:140px
 }
 
 /* ---------- the rail ---------- */
@@ -97,17 +99,28 @@ h1{
    time, so heights must be strictly proportional to duration or they would
    drift off the gridlines. */
 .rail{position:relative;margin:16px 0 0;padding-left:48px}
+/* Gridlines paint ABOVE the blocks. Underneath they were hidden by opaque
+   pastel fills, leaving only the gutter label visible — which reads as the
+   grid being out of true with the times even when it isn't. */
 .gridline{
-  position:absolute;left:0;right:0;height:1px;background:var(--line-soft);
-  pointer-events:none
+  position:absolute;left:0;right:0;height:1px;
+  background:rgba(249,198,211,.55);
+  pointer-events:none;z-index:5
 }
-.gridline.hour{background:var(--line)}
+.gridline.hour{background:rgba(233,150,175,.85)}
+/* centred on the line rather than floating 7px above it */
 .gridline span{
-  position:absolute;left:0;top:-7px;width:40px;text-align:right;
+  position:absolute;left:0;top:0;transform:translateY(-50%);
+  width:40px;text-align:right;line-height:1;
   font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--faint);
   letter-spacing:-.02em
 }
 .gridline.hour span{color:var(--muted);font-weight:600}
+/* the gutter portion is opaque so labels never sit on top of a block edge */
+.gridline::before{
+  content:'';position:absolute;left:0;width:48px;top:-6px;height:13px;
+  background:var(--paper)
+}
 
 /* A group is one focus block plus the break that follows it. Groups are what
    you drag; the break travels with its block. */
@@ -185,8 +198,12 @@ h1{
 }
 .group.dragging{z-index:20}
 .group.dragging .body{box-shadow:0 8px 22px rgba(43,42,92,.22);border-color:var(--ink)}
-.rail.reordering .group{transition:transform .16s ease}
-.rail.reordering .group.dragging{transition:none}
+/* No transition while a drag is live. Previously .reordering put a 160ms ease
+   on transform, and transform is rewritten on every pointermove — so each
+   move started a fresh animation and the blocks lagged behind the finger. */
+.rail.reordering .group{transition:none}
+/* dimmed while the save is in flight, with the dragged position held */
+.rail.saving{opacity:.6;pointer-events:none;transition:opacity .12s}
 
 /* now marker */
 .nowline{
@@ -465,9 +482,18 @@ function blockEl(b, editable){
     body.setAttribute('aria-label', (b.done ? 'Mark not done: ' : 'Mark done: ') + b.task);
     const toggle = async () => {
       const next = !el.classList.contains('done');
+      // update the model and the counter immediately; the round trip to Apps
+      // Script takes about a second and the UI should not wait on it
       el.classList.toggle('done', next);
+      b.done = next;
+      refreshSummary();
       const r = await apiPost({action:'setDone', id:b.id, done:next});
-      if(!r.ok){ el.classList.toggle('done', !next); toast('Could not save'); }
+      if(!r.ok){
+        el.classList.toggle('done', !next);
+        b.done = !next;
+        refreshSummary();
+        toast('Could not save');
+      }
     };
     body.onclick = e => { if(!e.target.closest('.grip')) toggle(); };
     body.onkeydown = e => { if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); toggle(); } };
@@ -506,16 +532,27 @@ function renderNowLine(rail, day){
   rail.appendChild(line);
 }
 
-function renderSummary(day){
+function summaryHTML(day){
   const focus = day.blocks.filter(b=>b.kind==='focus');
   const done = focus.filter(b=>b.done).length;
-  const div = document.createElement('div');
-  div.className = 'summary';
-  div.innerHTML =
-    '<div><b>' + done + '/' + focus.length + '</b> done</div>' +
+  return '<div><b>' + done + '/' + focus.length + '</b> done</div>' +
     '<div><b>' + (done*30/60).toFixed(1) + 'h</b> logged</div>' +
     '<div>ends <b>' + day.blocks[day.blocks.length-1].end + '</b></div>';
+}
+
+function renderSummary(day){
+  const div = document.createElement('div');
+  div.className = 'summary';
+  div.id = 'summary';
+  div.innerHTML = summaryHTML(day);
   return div;
+}
+
+/** Keep the counter honest after a check-off, without a full re-render. */
+function refreshSummary(){
+  const el = $('summary');
+  const day = dayById(state.selected);
+  if(el && day) el.innerHTML = summaryHTML(day);
 }
 
 function render(){
@@ -539,15 +576,6 @@ function render(){
   const L = layout(day);
   rail.style.height = ((L.to - L.from) * PX_PER_MIN) + 'px';
 
-  // every half hour of the window, scheduled or not
-  for(let t = L.from; t <= L.to; t += 30){
-    const line = document.createElement('div');
-    line.className = 'gridline' + (t % 60 === 0 ? ' hour' : '');
-    line.style.top = ((t - L.from) * PX_PER_MIN) + 'px';
-    line.innerHTML = '<span>' + fmtMin(t) + '</span>';
-    rail.appendChild(line);
-  }
-
   // index each block's placement so a group can be positioned by clock time
   const at = {};
   L.placed.forEach(p => { at[p.block.id] = p; });
@@ -567,6 +595,16 @@ function render(){
     }
     rail.appendChild(g);
   });
+
+  // drawn last so they sit above the blocks — every half hour of the window,
+  // scheduled or not
+  for(let t = L.from; t <= L.to; t += 30){
+    const line = document.createElement('div');
+    line.className = 'gridline' + (t % 60 === 0 ? ' hour' : '');
+    line.style.top = ((t - L.from) * PX_PER_MIN) + 'px';
+    line.innerHTML = '<span>' + fmtMin(t) + '</span>';
+    rail.appendChild(line);
+  }
   content.appendChild(rail);
   renderNowLine(rail, day);
   content.appendChild(renderSummary(day));
@@ -622,7 +660,8 @@ function attachDelay(grip, el, date, blockId, currentGap, startsAt){
     if(Math.abs(dy) > 4) moved = true;
     mins = minutesFor(dy);
     const px = (mins - currentGap) * PX_PER_MIN;
-    below.forEach(n => { n.style.transform = 'translateY(' + px + 'px)'; });
+    // translate3d keeps this on the compositor instead of relayout per move
+    below.forEach(n => { n.style.transform = 'translate3d(0,' + px + 'px,0)'; });
     // now that the grid shows real hours, the useful readout is the clock
     // time this block would land on, not the size of the delay
     grip.dataset.hint = fmtMin(startsAt - currentGap + mins);
@@ -635,18 +674,28 @@ function attachDelay(grip, el, date, blockId, currentGap, startsAt){
 
     el.classList.remove('dragging');
     rail.classList.remove('reordering');
-    below.forEach(n => { n.style.transform = ''; });
     delete grip.dataset.hint;
 
-    if(!moved || mins === currentGap) return;
+    const reset = () => below.forEach(n => {
+      n.style.transform = ''; n.style.willChange = '';
+    });
 
-    toast(mins ? 'Delaying ' + mins + 'm…' : 'Clearing delay…');
+    if(!moved || mins === currentGap){ reset(); return; }
+
+    // Hold the dragged position while the save is in flight. Clearing it here
+    // made the whole schedule snap back to its old times for the length of the
+    // round trip and then jump forward again once the re-render landed.
+    rail.classList.add('saving');
     const r = await apiPost({action:'setDelay', date: date, id: blockId, minutes: mins});
     if(r.ok){
-      absorb(r.data); render();
+      absorb(r.data);
+      render();                       // rebuilds the rail, so transforms go with it
       toast(mins ? 'Pushed back ' + mins + 'm' : 'Delay cleared');
     } else {
-      toast('Could not save'); load();
+      rail.classList.remove('saving');
+      reset();
+      toast('Could not save');
+      load();
     }
   };
 
@@ -658,6 +707,7 @@ function attachDelay(grip, el, date, blockId, currentGap, startsAt){
     const i = groups.indexOf(el);
     if(i < 0) return;
     below = groups.slice(i);   // this group and everything after it, only
+    below.forEach(n => { n.style.willChange = 'transform'; });
     startY = e.clientY;
     mins = currentGap;
     moved = false;
