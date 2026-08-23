@@ -138,6 +138,23 @@ h1{
 }
 .block.break .label{font-size:12px}
 
+/* a gap is time pushed aside by a delay — deliberately empty-looking */
+.block.gap .body{
+  background:repeating-linear-gradient(135deg,
+    transparent 0 6px, rgba(226,75,74,.10) 6px 12px);
+  border:1px dashed rgba(226,75,74,.45);color:#A33B3A
+}
+.block.gap .label{font-size:11px;font-style:italic}
+
+/* live readout of the delay while dragging */
+.grip[data-hint]::after{
+  content:attr(data-hint);position:absolute;right:48px;
+  font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;
+  color:var(--ink);background:#fff;border:1px solid var(--line);
+  border-radius:6px;padding:2px 6px;white-space:nowrap
+}
+.grip{position:relative}
+
 .label{flex:1;font-size:13px;font-weight:500;letter-spacing:-.01em;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dur{font-family:'JetBrains Mono',monospace;font-size:10px;opacity:.75;flex:0 0 auto}
@@ -288,6 +305,7 @@ const apiPost = payload => {
     case 'reorder':  return call('apiReorder', payload.date, payload.orderedIds);
     case 'setStart': return call('apiSetStart', payload.field, payload.value);
     case 'replan':   return call('apiReplan', payload.date);
+    case 'setDelay': return call('apiSetDelay', payload.date, payload.id, payload.minutes);
     default:         return Promise.resolve({ok:false, error:'unknown action'});
   }
 };
@@ -299,23 +317,31 @@ function blockHeight(b){
   return Math.max(MIN_GRAB, b.duration * PX_PER_MIN);
 }
 
+const isBreak = k => k === 'short_break' || k === 'long_break';
+
 /**
- * A focus block and the break immediately after it form one draggable group,
- * so dragging a study slot carries its break along. A break with no focus
- * block before it stands alone — that shouldn't occur in a generated day, but
- * a hand-reordered one could produce it and it must still render.
+ * A focus block and the break immediately after it form one group, so a delay
+ * applied to a study slot carries its break along. A 'gap' is never absorbed
+ * into a group — it is the delay itself, and sits before the block it pushes.
  */
 function buildGroups(blocks){
   const groups = [];
   for(let i = 0; i < blocks.length; i++){
     const g = [blocks[i]];
-    if(blocks[i].kind === 'focus' && blocks[i+1] && blocks[i+1].kind !== 'focus'){
+    if(blocks[i].kind === 'focus' && blocks[i+1] && isBreak(blocks[i+1].kind)){
       g.push(blocks[i+1]);
       i++;
     }
     groups.push(g);
   }
   return groups;
+}
+
+/** Minutes of gap sitting immediately before this block, 0 if none. */
+function gapBefore(blocks, id){
+  const i = blocks.findIndex(b => b.id === id);
+  if(i > 0 && blocks[i-1].kind === 'gap') return blocks[i-1].duration;
+  return 0;
 }
 
 function renderTabs(){
@@ -366,7 +392,8 @@ function renderStartBar(day){
 
 function blockEl(b, editable, isHourStart){
   const el = document.createElement('div');
-  el.className = 'block ' + (b.kind === 'focus' ? 'focus' : 'break')
+  const kindClass = b.kind === 'focus' ? 'focus' : b.kind === 'gap' ? 'gap' : 'break';
+  el.className = 'block ' + kindClass
     + (b.done ? ' done' : '') + (isHourStart ? ' hour' : '');
   el.dataset.id = b.id;
   if(b.subject) el.dataset.subject = b.subject;
@@ -389,7 +416,7 @@ function blockEl(b, editable, isHourStart){
 
   const label = document.createElement('div');
   label.className = 'label';
-  label.textContent = b.task;
+  label.textContent = b.kind === 'gap' ? 'Pushed back ' + b.duration + 'm' : b.task;
   body.appendChild(label);
 
   const dur = document.createElement('div');
@@ -498,9 +525,12 @@ function render(){
       lastHour = hour;
       g.appendChild(blockEl(b, editable, isHourStart));
     });
-    // the grip lives on the focus block but drags the whole group
+    // dragging the grip delays this group and everything below it
     const grip = g.querySelector('.grip');
-    if(grip) attachDrag(grip, g);
+    if(grip){
+      const lead = group[0];
+      attachDelay(grip, g, day.date, lead.id, gapBefore(day.blocks, lead.id));
+    }
     rail.appendChild(g);
   });
   content.appendChild(rail);
@@ -531,69 +561,35 @@ function render(){
 }
 
 // ---------------------------------------------------------------- drag to reorder
+const SNAP_MIN = 5;   // delays land on 5-minute boundaries
+
 /**
- * Reorder by dragging the grip.
+ * Drag the grip to delay this group and everything below it. Blocks above are
+ * never touched — they keep their transforms at zero throughout.
  *
- * The DOM is deliberately NOT touched while dragging. The previous version
- * called insertBefore() mid-drag, which detaches the dragged element's subtree
- * — including the grip holding pointer capture — and removing a capturing
- * element releases the capture, so pointermove stopped firing and the drag
- * died on the first reorder. Here the blocks are only moved visually with
- * transforms, and the real order is committed once on release.
- *
- * Listeners live on window so nothing depends on capture surviving at all.
+ * The DOM is deliberately not mutated while dragging. An earlier version
+ * called insertBefore() mid-drag, which detaches the dragged subtree —
+ * including the grip holding pointer capture — and removing a capturing
+ * element releases the capture, so pointermove stopped firing. Here everything
+ * is previewed with transforms and committed once on release, and the
+ * listeners live on window so nothing depends on capture surviving.
  */
-function attachDrag(grip, el){
-  let rail=null, items=[], dragIdx=-1, gap=9, dy=0, moved=false;
+function attachDelay(grip, el, date, blockId, currentGap){
+  let rail=null, below=[], startY=0, mins=currentGap, moved=false;
 
-  const measure = () => {
-    items = [...rail.children]
-      .filter(n => n.classList.contains('group'))
-      .map(n => ({ el:n, top:n.offsetTop, h:n.offsetHeight }));
-    gap = items.length > 1
-      ? Math.max(0, items[1].top - (items[0].top + items[0].h))
-      : 9;
-    dragIdx = items.findIndex(i => i.el === el);
-  };
-
-  // Where the dragged block would land, given how far it has moved.
-  // Compared against the other blocks' CURRENT positions, not against a
-  // compacted layout — otherwise a drag of zero distance still displaces the
-  // block, because the neighbour below appears to have slid up into its place.
-  const targetIndex = () => {
-    const rest = items.map((_,i)=>i).filter(i => i !== dragIdx);
-    const centre = items[dragIdx].top + dy + items[dragIdx].h/2;
-    for(let k=0;k<rest.length;k++){
-      const it = items[rest[k]];
-      if(centre < it.top + it.h/2) return k;
-    }
-    return rest.length;
-  };
-
-  const orderNow = () => {
-    const rest = items.map((_,i)=>i).filter(i => i !== dragIdx);
-    rest.splice(targetIndex(), 0, dragIdx);
-    return rest;
-  };
-
-  // Preview the candidate order by transforming every block to where it
-  // would sit. Heights vary (a padded 10-min break is not a 30-min block),
-  // so positions are recomputed rather than shifted by a fixed amount.
-  const paint = () => {
-    let pos = items[0].top;
-    orderNow().forEach(i => {
-      const it = items[i];
-      it.el.style.transform = (i === dragIdx)
-        ? 'translateY(' + dy + 'px)'
-        : 'translateY(' + (pos - it.top) + 'px)';
-      pos += it.h + gap;
-    });
-  };
+  // Drag distance converts to minutes at the same scale the blocks are drawn,
+  // then snaps. Clamped at zero: you can drag up to cancel a delay, but a
+  // block can never start earlier than its natural place in the day.
+  const minutesFor = dy =>
+    Math.max(0, Math.round((currentGap + dy / PX_PER_MIN) / SNAP_MIN) * SNAP_MIN);
 
   const onMove = e => {
-    dy = e.clientY - startY;
+    const dy = e.clientY - startY;
     if(Math.abs(dy) > 4) moved = true;
-    paint();
+    mins = minutesFor(dy);
+    const px = (mins - currentGap) * PX_PER_MIN;
+    below.forEach(n => { n.style.transform = 'translateY(' + px + 'px)'; });
+    grip.dataset.hint = mins ? '+' + mins + 'm' : '0';
   };
 
   const onUp = async () => {
@@ -601,32 +597,33 @@ function attachDrag(grip, el){
     window.removeEventListener('pointerup', onUp);
     window.removeEventListener('pointercancel', onUp);
 
-    const order = orderNow();
     el.classList.remove('dragging');
     rail.classList.remove('reordering');
-    items.forEach(it => { it.el.style.transform = ''; });
+    below.forEach(n => { n.style.transform = ''; });
+    delete grip.dataset.hint;
 
-    if(!moved) return;                       // a tap on the grip, not a drag
-    if(order.every((v,i) => v === i)) return; // dropped back where it started
+    if(!moved || mins === currentGap) return;
 
-    // flatten groups back to the flat block order the sheet stores
-    const ids = order.flatMap(i =>
-      [...items[i].el.querySelectorAll('.block')].map(n => n.dataset.id));
-    toast('Saving order…');
-    const r = await apiPost({action:'reorder', date: rail.dataset.date, orderedIds: ids});
-    if(r.ok){ absorb(r.data); render(); toast('Times updated'); }
-    else { toast('Could not save order'); load(); }
+    toast(mins ? 'Delaying ' + mins + 'm…' : 'Clearing delay…');
+    const r = await apiPost({action:'setDelay', date: date, id: blockId, minutes: mins});
+    if(r.ok){
+      absorb(r.data); render();
+      toast(mins ? 'Pushed back ' + mins + 'm' : 'Delay cleared');
+    } else {
+      toast('Could not save'); load();
+    }
   };
 
-  let startY = 0;
   grip.addEventListener('pointerdown', e => {
     e.preventDefault();
     e.stopPropagation();
     rail = el.parentElement;
-    measure();
-    if(dragIdx < 0) return;
+    const groups = [...rail.children].filter(n => n.classList.contains('group'));
+    const i = groups.indexOf(el);
+    if(i < 0) return;
+    below = groups.slice(i);   // this group and everything after it, only
     startY = e.clientY;
-    dy = 0;
+    mins = currentGap;
     moved = false;
     el.classList.add('dragging');
     rail.classList.add('reordering');
