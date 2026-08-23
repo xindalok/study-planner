@@ -154,15 +154,6 @@ h1{
 .block.break .label{font-size:11px;font-weight:500;line-height:1}
 .block.break .dur{font-size:10px;opacity:.8}
 
-/* a gap is time pushed aside by a delay — a real block, but marked out as
-   time that belongs to no task */
-.block.gap .body{
-  background:#FBEBEA;border:1px solid rgba(226,75,74,.35);color:#A33B3A;
-  padding:0 8px
-}
-.block.gap .label{font-size:11px;font-style:italic;line-height:1}
-.block.gap .dur{font-size:10px;opacity:.8}
-
 /* live readout of the delay while dragging */
 .grip[data-hint]::after{
   content:attr(data-hint);position:absolute;right:48px;
@@ -456,9 +447,9 @@ function renderStartBar(day){
 
 function blockEl(b, editable){
   const el = document.createElement('div');
-  const kindClass = b.kind === 'focus' ? 'focus' : b.kind === 'gap' ? 'gap' : 'break';
   // also carry the exact kind, so long breaks can read differently from short
-  el.className = 'block ' + kindClass + ' ' + b.kind + (b.done ? ' done' : '');
+  el.className = 'block ' + (b.kind === 'focus' ? 'focus' : 'break')
+    + ' ' + b.kind + (b.done ? ' done' : '');
   el.dataset.id = b.id;
   if(b.subject) el.dataset.subject = b.subject;
   el.style.height = blockHeight(b) + 'px';
@@ -475,7 +466,7 @@ function blockEl(b, editable){
 
   const label = document.createElement('div');
   label.className = 'label';
-  label.textContent = b.kind === 'gap' ? 'Pushed back ' + b.duration + 'm' : b.task;
+  label.textContent = b.task;
   body.appendChild(label);
 
   const dur = document.createElement('div');
@@ -589,7 +580,10 @@ function render(){
   const at = {};
   L.placed.forEach(p => { at[p.block.id] = p; });
 
-  buildGroups(day.blocks).forEach(group => {
+  // Gaps are not drawn. They still count in layout() above, so the blocks
+  // after a delay sit later on the canvas — the delay shows as empty grid
+  // rather than as a block of its own.
+  buildGroups(day.blocks.filter(b => b.kind !== 'gap')).forEach(group => {
     const g = document.createElement('div');
     g.className = 'group';
     g.style.top = ((at[group[0].id].from - L.from) * PX_PER_MIN) + 'px';
