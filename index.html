@@ -102,7 +102,7 @@ h1{
    whether or not anything is scheduled in it. Blocks are positioned by clock
    time, so heights must be strictly proportional to duration or they would
    drift off the gridlines. */
-.rail{position:relative;margin:16px 0 0;padding-left:48px}
+.rail{position:relative;margin:16px 0 0;padding-left:58px}
 /* Gridlines sit BEHIND the blocks, so they rule the empty grid you can drop
    into and stop where a block starts. They were briefly drawn on top to fix
    apparent misalignment, but the real cause of that was the label floating
@@ -117,21 +117,21 @@ h1{
 /* centred on the line rather than floating 7px above it */
 .gridline span{
   position:absolute;left:0;top:0;transform:translateY(-50%);
-  width:40px;text-align:right;line-height:1;
+  width:50px;text-align:right;line-height:1;
   font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--faint);
   letter-spacing:-.02em
 }
 .gridline.hour span{color:var(--muted);font-weight:600}
 /* the gutter portion is opaque so labels never sit on top of a block edge */
 .gridline::before{
-  content:'';position:absolute;left:0;width:48px;top:-6px;height:13px;
+  content:'';position:absolute;left:0;width:58px;top:-6px;height:13px;
   background:var(--paper)
 }
 
 /* A group is one focus block plus the break that follows it. Groups are what
    you drag; the break travels with its block. */
 /* above the gridlines regardless of DOM order, so lines never cross a block */
-.group{position:absolute;left:48px;right:0;z-index:1}
+.group{position:absolute;left:58px;right:0;z-index:1}
 .block{
   position:relative;display:flex;align-items:stretch;touch-action:pan-y
 }
@@ -214,7 +214,7 @@ button.ghost.primary{
 
 /* tap-empty-grid affordance */
 .slotpick{
-  position:absolute;left:48px;right:0;z-index:30;
+  position:absolute;left:58px;right:0;z-index:30;
   background:var(--paper);border:1px solid var(--ink);border-radius:8px;
   padding:7px 8px;display:flex;gap:6px;align-items:center;
   box-shadow:0 6px 20px rgba(43,42,92,.18)
@@ -293,7 +293,7 @@ button.ghost.primary{
   pointer-events:none;z-index:10
 }
 .nowline::before{
-  content:'';position:absolute;left:44px;top:-4px;
+  content:'';position:absolute;left:54px;top:-4px;
   width:9px;height:9px;border-radius:50%;background:var(--now)
 }
 /* right-aligned: in the gutter it sat on top of the half-hour label whenever
@@ -390,25 +390,55 @@ button.ghost.warn:active{background:#F7DDDC}
 .bt-ack:active{background:#432A03}
 @media (max-width:400px){ .bt-label span{display:none} }
 :focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+/* Wide screens put the title, day picker and start time in a sticky left
+   column, so the timetable gets the full height of the page instead of
+   starting ~250px down. Below the breakpoint everything stacks as before —
+   a sidebar on a 390px phone would leave nothing for the schedule. */
+@media (min-width:760px){
+  .wrap{max-width:1000px}
+  .layout{display:flex;gap:24px;align-items:flex-start}
+  .side{flex:0 0 210px;position:sticky;top:18px}
+  .main{flex:1;min-width:0}
+  header{padding:18px 0 12px}
+  h1{font-size:25px}
+  .sub{font-size:12.5px}
+  .days{flex-direction:column;gap:5px;padding:6px 0 0}
+  .day-tab{
+    flex:0 0 auto;display:flex;align-items:baseline;gap:9px;
+    text-align:left;padding:9px 12px
+  }
+  .day-tab b{display:inline;font-size:14px}
+  .startbar{flex-direction:column;align-items:stretch;gap:6px;margin:12px 0 0}
+  .startbar label{flex:0 0 auto}
+  .startbar input{width:100%}
+  .rail{margin-top:4px}
+}
+
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <header>
-    <p class="kicker" id="kicker">Study planner</p>
-    <h1 id="title">Loading</h1>
-    <p class="sub" id="subtitle">Fetching your schedule…</p>
-  </header>
+  <div class="layout">
+    <aside class="side">
+      <header>
+        <p class="kicker" id="kicker">Study planner</p>
+        <h1 id="title">Loading</h1>
+        <p class="sub" id="subtitle">Fetching your schedule…</p>
+      </header>
 
-  <div class="days" id="days" role="tablist"></div>
+      <div class="days" id="days" role="tablist"></div>
 
-  <div class="startbar" id="startbar" hidden>
-    <label for="startInput" id="startLabel">Start time</label>
-    <input type="time" id="startInput">
+      <div class="startbar" id="startbar" hidden>
+        <label for="startInput" id="startLabel">Start time</label>
+        <input type="time" id="startInput">
+      </div>
+    </aside>
+
+    <main class="main">
+      <div id="content"></div>
+    </main>
   </div>
-
-  <div id="content"></div>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -463,10 +493,20 @@ const toMin = hhmm => {
   const [h,m] = hhmm.split(':').map(Number);
   return h*60 + m;
 };
-const fmtMin = t => {
-  const h = Math.floor(t/60) % 24, m = t % 60;
-  return ('0'+h).slice(-2) + ':' + ('0'+m).slice(-2);
-};
+/**
+ * Display format: 9.30pm, and 9pm on the hour. Takes either minutes-from-
+ * midnight (which may run past 1440 for after-midnight blocks) or an 'HH:mm'
+ * string as the server sends it. Storage stays 24-hour — this is display only.
+ */
+function fmt12(t){
+  const raw = (typeof t === 'number') ? t : toMin(t);
+  const m = ((raw % 1440) + 1440) % 1440;
+  const mins = m % 60;
+  let h = Math.floor(m / 60) % 12;
+  if(h === 0) h = 12;
+  const suffix = (Math.floor(m / 60) < 12) ? 'am' : 'pm';
+  return mins ? h + '.' + ('0'+mins).slice(-2) + suffix : h + suffix;
+}
 
 /**
  * Absolute minute positions for a day, measured on a continuous line that
@@ -642,7 +682,7 @@ function blockEl(b, editable){
   // row, so a 45px focus block and a 15px break lay out identically.
   const from = document.createElement('div');
   from.className = 'from';
-  from.textContent = b.start;
+  from.textContent = fmt12(b.start);
   body.appendChild(from);
 
   const label = document.createElement('div');
@@ -652,7 +692,7 @@ function blockEl(b, editable){
 
   const to = document.createElement('div');
   to.className = 'to';
-  to.textContent = b.end;
+  to.textContent = fmt12(b.end);
   body.appendChild(to);
 
   // tap a blocked slot to give the time back
@@ -830,7 +870,7 @@ function summaryHTML(day){
   const done = focus.filter(b=>b.done).length;
   return '<div><b>' + done + '/' + focus.length + '</b> done</div>' +
     '<div><b>' + (done*30/60).toFixed(1) + 'h</b> logged</div>' +
-    '<div>ends <b>' + day.blocks[day.blocks.length-1].end + '</b></div>' +
+    '<div>ends <b>' + fmt12(day.blocks[day.blocks.length-1].end) + '</b></div>' +
     (TRIGGER_OK ? '' : '<div class="warn">daily trigger not installed</div>');
 }
 
@@ -928,7 +968,7 @@ function render(){
     const line = document.createElement('div');
     line.className = 'gridline' + (t % 60 === 0 ? ' hour' : '');
     line.style.top = ((t - L.from) * PX_PER_MIN) + 'px';
-    line.innerHTML = '<span>' + fmtMin(t) + '</span>';
+    line.innerHTML = '<span>' + fmt12(t) + '</span>';
     rail.appendChild(line);
   }
   if(editable) attachSlotPicker(rail, day, L);
@@ -1010,7 +1050,7 @@ function attachSlotPicker(rail, day, L){
     pick = document.createElement('div');
     pick.className = 'slotpick';
     pick.style.top = Math.max(0, (at - L.from) * PX_PER_MIN) + 'px';
-    pick.innerHTML = '<b>' + fmtMin(at) + '</b>';
+    pick.innerHTML = '<b>' + fmt12(at) + '</b>';
 
     [['30m',30],['1h',60],['2h',120]].forEach(([label,mins]) => {
       const b = document.createElement('button');
@@ -1069,7 +1109,7 @@ function attachDelay(grip, el, date, blockId, currentGap, startsAt){
     below.forEach(n => { n.style.transform = 'translate3d(0,' + px + 'px,0)'; });
     // now that the grid shows real hours, the useful readout is the clock
     // time this block would land on, not the size of the delay
-    grip.dataset.hint = fmtMin(startsAt - currentGap + mins);
+    grip.dataset.hint = fmt12(startsAt - currentGap + mins);
   };
 
   const onUp = async () => {
@@ -1254,7 +1294,7 @@ function tickTimer(){
     $('breaktimer').classList.add('alerting');
     $('btName').textContent = cur.block.task;
     $('btEnds').textContent = (isBreak(cur.block.kind) ? 'break started · ' : 'started · ')
-      + cur.block.start;
+      + fmt12(cur.block.start);
     $('btLeft').hidden = true;
     $('btAck').hidden = false;
     $('btDismiss').hidden = true;
@@ -1276,7 +1316,7 @@ function tickTimer(){
 
   const left = Math.max(0, (cur.to - mins) * 60);
   $('btName').textContent = cur.block.task;
-  $('btEnds').textContent = 'ends ' + cur.block.end;
+  $('btEnds').textContent = 'ends ' + fmt12(cur.block.end);
   $('btLeft').textContent = pad(Math.floor(left / 60)) + ':' + pad(Math.floor(left % 60));
   $('breaktimer').hidden = false;
 }
