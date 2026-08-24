@@ -71,10 +71,13 @@ h1{
   text-align:center;white-space:nowrap;overflow:hidden;
   transition:transform .12s,filter .12s;
 }
-.day-tab{display:flex;flex-direction:column;align-items:center;gap:1px}
-.dw{font-size:9.5px;letter-spacing:.09em;opacity:.75;line-height:1}
-.dd{font-size:17px;font-weight:600;line-height:1.05;letter-spacing:-.02em}
-.dm{font-size:9px;letter-spacing:.1em;opacity:.65;line-height:1;text-transform:uppercase}
+/* Weekday is the primary read, then the date, then the month. '24 Aug' is
+   wrapped so the two never break apart or drift to opposite edges. */
+.day-tab{display:flex;flex-direction:column;align-items:center;gap:3px}
+.dw{font-size:12.5px;font-weight:600;letter-spacing:.1em;line-height:1}
+.dgrp{display:inline-flex;align-items:baseline;gap:4px;line-height:1}
+.dd{font-size:12px;font-weight:600;letter-spacing:-.01em}
+.dm{font-size:11px;font-weight:400;opacity:.68}
 .day-tab[aria-selected="true"]{border-color:var(--ink)}
 .day-tab.past{opacity:.45}
 .day-tab:active{transform:scale(.97)}
@@ -419,12 +422,12 @@ button.ghost.warn:active{background:#F7DDDC}
   .side{padding-top:4px}
   .days{flex-direction:column;gap:5px;padding:6px 0 0}
   .day-tab{
-    flex:0 0 auto;flex-direction:row;align-items:baseline;gap:8px;
-    text-align:left;padding:9px 13px
+    flex:0 0 auto;flex-direction:row;align-items:baseline;gap:10px;
+    text-align:left;padding:10px 13px
   }
-  .dw{flex:0 0 auto}
-  .dd{font-size:18px}
-  .dm{margin-left:auto}
+  .dw{flex:0 0 auto;font-size:13px}
+  .dgrp{margin-left:auto}
+  .dd{font-size:12.5px}
   .startbar{flex-direction:column;align-items:stretch;gap:6px;margin:12px 0 0}
   .startbar label{flex:0 0 auto}
   .startbar input{width:100%}
@@ -647,10 +650,12 @@ function renderTabs(){
     b.className = 'day-tab dow-' + dow + (d.date < state.today ? ' past' : '');
     b.setAttribute('role','tab');
     b.setAttribute('aria-selected', String(d.date === state.selected));
-    // three tiers: weekday, then the date as the hero, then the month
+    // hierarchy: weekday leads, then '24 Aug' as a single grouped unit
     b.innerHTML = '<span class="dw">' + d.weekday.slice(0,3).toUpperCase() + '</span>'
-      + '<span class="dd">' + Number(d.date.slice(8,10)) + '</span>'
-      + '<span class="dm">' + MONTHS[Number(d.date.slice(5,7)) - 1] + '</span>';
+      + '<span class="dgrp">'
+      +   '<span class="dd">' + Number(d.date.slice(8,10)) + '</span>'
+      +   '<span class="dm">' + MONTHS[Number(d.date.slice(5,7)) - 1] + '</span>'
+      + '</span>';
     b.onclick = () => { state.selected = d.date; render(); };
     el.appendChild(b);
   });
