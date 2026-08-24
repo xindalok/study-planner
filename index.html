@@ -11,12 +11,14 @@
 <style>
 :root{
   --paper:#FFFFFF;
-  --panel:#FCF6F8;
-  --line:#F9C6D3;
-  --line-soft:#FCE4EB;
+  --canvas:#FAF8FA;      /* page behind the card */
+  --panel:#F7F4F7;
+  --hair:#E9E3EA;        /* card + control borders */
+  --line:#E9E3EA;
+  --line-soft:#F2EEF3;
   --ink:#2B2A5C;
-  --muted:#8B86A8;
-  --faint:#B39EAC;
+  --muted:#7E7789;
+  --faint:#A69FAE;
   --now:#E24B4A;
   --radius:10px;
 
@@ -34,7 +36,7 @@
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;padding:0}
 body{
-  background:var(--paper);
+  background:var(--canvas);
   color:var(--ink);
   font-family:'Inter',system-ui,-apple-system,sans-serif;
   font-size:15px;
@@ -42,7 +44,7 @@ body{
   padding:0 0 72px;
   -webkit-font-smoothing:antialiased;
 }
-.wrap{max-width:520px;margin:0 auto;padding:0 14px}
+.wrap{max-width:520px;margin:0 auto;padding:0 14px 8px}
 
 /* ---------- header ---------- */
 header{padding:20px 0 10px}
@@ -84,13 +86,13 @@ h1{
 /* ---------- start time ---------- */
 .startbar{
   display:flex;align-items:center;gap:10px;
-  background:var(--panel);border:1px solid var(--line);
-  border-radius:var(--radius);padding:9px 12px;margin:12px 0 2px
+  background:var(--paper);border:1px solid var(--hair);
+  border-radius:12px;padding:11px 13px;margin:12px 0 2px
 }
 .startbar[hidden]{display:none}
 .startbar label{font-size:12px;color:var(--muted);flex:1}
 .startbar input{
-  background:var(--paper);border:1px solid var(--line);color:var(--ink);
+  background:var(--canvas);border:1px solid var(--hair);color:var(--ink);
   font-family:'JetBrains Mono',monospace;font-size:14px;
   /* wide enough for a 12-hour locale's AM/PM segment, which was being
      clipped — 07:30 with no meridiem is ambiguous */
@@ -102,7 +104,13 @@ h1{
    whether or not anything is scheduled in it. Blocks are positioned by clock
    time, so heights must be strictly proportional to duration or they would
    drift off the gridlines. */
-.rail{position:relative;margin:16px 0 0;padding-left:58px}
+/* The schedule sits in a card so it reads as one object, and so the first
+   gridline has space above it instead of butting against the window edge. */
+.railcard{
+  background:var(--paper);border:1px solid var(--hair);border-radius:14px;
+  padding:26px 16px 22px;margin-top:14px
+}
+.rail{position:relative;padding-left:58px}
 /* Gridlines sit BEHIND the blocks, so they rule the empty grid you can drop
    into and stop where a block starts. They were briefly drawn on top to fix
    apparent misalignment, but the real cause of that was the label floating
@@ -110,23 +118,24 @@ h1{
    block just made the column noisy. */
 .gridline{
   position:absolute;left:0;right:0;height:1px;
-  background:rgba(249,198,211,.55);
+  background:var(--line-soft);
   pointer-events:none;z-index:0
 }
-.gridline.hour{background:rgba(233,150,175,.85)}
+.gridline.hour{background:var(--hair)}
 /* centred on the line rather than floating 7px above it */
 .gridline span{
   position:absolute;left:0;top:0;transform:translateY(-50%);
   width:50px;text-align:right;line-height:1;
-  font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--faint);
-  letter-spacing:-.02em
+  font-family:'JetBrains Mono',monospace;font-size:9.5px;color:var(--faint);
+  letter-spacing:-.02em;font-weight:400
 }
-.gridline.hour span{color:var(--muted);font-weight:600}
+.gridline.hour span{color:var(--muted);font-weight:600;font-size:10.5px}
 /* the gutter portion is opaque so labels never sit on top of a block edge */
 .gridline::before{
   content:'';position:absolute;left:0;width:58px;top:-6px;height:13px;
   background:var(--paper)
 }
+.railcard .gridline::before{background:var(--paper)}
 
 /* A group is one focus block plus the break that follows it. Groups are what
    you drag; the break travels with its block. */
@@ -136,9 +145,9 @@ h1{
   position:relative;display:flex;align-items:stretch;touch-action:pan-y
 }
 .body{
-  flex:1;border-radius:6px;
-  display:flex;align-items:center;gap:8px;padding:2px 8px;
-  overflow:hidden;border:1px solid transparent
+  flex:1;border-radius:8px;
+  display:flex;align-items:center;gap:9px;padding:2px 10px;
+  overflow:hidden;border:1px solid rgba(43,42,92,.07)
 }
 .block.focus .body{cursor:pointer}
 .block[data-subject="Vibecode App Dev"] .body{background:var(--appdev);color:var(--appdev-ink)}
@@ -267,16 +276,17 @@ button.ghost.primary{
    a grip, and those are 45px tall, so the handle is a full 44x45. touch-action
    is none here only — the block keeps pan-y so the page still scrolls. */
 .grip{
-  flex:0 0 auto;width:44px;align-self:stretch;cursor:grab;
+  flex:0 0 auto;width:40px;align-self:stretch;cursor:grab;
   display:grid;place-items:center;touch-action:none;
-  margin:0 -8px 0 0;border-radius:0 6px 6px 0;
-  background:rgba(43,42,92,.06)
+  margin:0 -10px 0 0;border-radius:0 7px 7px 0;
+  background:transparent;opacity:.35;transition:opacity .12s,background .12s
 }
-.grip:active{cursor:grabbing;background:rgba(43,42,92,.14)}
+.grip:hover{opacity:.75;background:rgba(43,42,92,.05)}
+.grip:active{cursor:grabbing;opacity:1;background:rgba(43,42,92,.1)}
 .grip span{
-  display:block;width:14px;height:2px;border-radius:2px;
-  background:currentColor;opacity:.5;
-  box-shadow:0 -5px 0 currentColor,0 5px 0 currentColor
+  display:block;width:12px;height:1.5px;border-radius:2px;
+  background:currentColor;
+  box-shadow:0 -4.5px 0 currentColor,0 4.5px 0 currentColor
 }
 .group.dragging{z-index:20}
 .group.dragging .body{box-shadow:0 8px 22px rgba(43,42,92,.22);border-color:var(--ink)}
@@ -307,19 +317,19 @@ button.ghost.primary{
 
 /* ---------- footer / states ---------- */
 .summary{
-  display:flex;gap:14px;margin:18px 0 0;padding-top:12px;
-  border-top:1px solid var(--line);font-size:12px;color:var(--muted);
+  display:flex;gap:14px;margin:16px 2px 0;
+  font-size:12px;color:var(--muted);
   font-family:'JetBrains Mono',monospace;flex-wrap:wrap
 }
 .summary b{color:var(--ink);font-weight:600}
 .summary .warn{color:#A33B3A;font-weight:600}
 .actions{display:flex;gap:8px;margin-top:14px}
 button.ghost{
-  background:var(--panel);border:1px solid var(--line);color:var(--muted);
-  border-radius:8px;padding:9px 14px;font-size:13px;cursor:pointer;
+  background:var(--paper);border:1px solid var(--hair);color:var(--muted);
+  border-radius:10px;padding:9px 15px;font-size:13px;cursor:pointer;
   font-family:inherit
 }
-button.ghost:active{background:#F7E9EE}
+button.ghost:active{background:var(--panel)}
 /* the only visible sign a delay exists, so give it some weight */
 button.ghost.warn{
   background:#FBEBEA;border-color:rgba(226,75,74,.4);color:#A33B3A;font-weight:500
@@ -340,7 +350,7 @@ button.ghost.warn:active{background:#F7DDDC}
 /* ---------- break timer + mute ---------- */
 .mute{
   margin-left:auto;flex:0 0 auto;width:42px;height:38px;
-  border-radius:8px;background:var(--panel);border:1px solid var(--line);
+  border-radius:10px;background:var(--paper);border:1px solid var(--hair);
   display:grid;place-items:center;cursor:pointer;padding:0
 }
 .mute svg{width:20px;height:20px;stroke:var(--muted);stroke-width:1.8;
@@ -399,9 +409,11 @@ button.ghost.warn:active{background:#F7DDDC}
   .layout{display:flex;gap:24px;align-items:flex-start}
   .side{flex:0 0 210px;position:sticky;top:18px}
   .main{flex:1;min-width:0}
-  header{padding:18px 0 12px}
-  h1{font-size:25px}
-  .sub{font-size:12.5px}
+  header{padding:0 0 14px}
+  h1{font-size:26px;margin-bottom:4px}
+  .sub{font-size:12.5px;line-height:1.5}
+  .wrap{padding-top:30px}
+  .side{padding-top:4px}
   .days{flex-direction:column;gap:5px;padding:6px 0 0}
   .day-tab{
     flex:0 0 auto;display:flex;align-items:baseline;gap:9px;
@@ -411,7 +423,7 @@ button.ghost.warn:active{background:#F7DDDC}
   .startbar{flex-direction:column;align-items:stretch;gap:6px;margin:12px 0 0}
   .startbar label{flex:0 0 auto}
   .startbar input{width:100%}
-  .rail{margin-top:4px}
+  .railcard{margin-top:0;padding:28px 18px 24px}
 }
 
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
@@ -972,7 +984,10 @@ function render(){
     rail.appendChild(line);
   }
   if(editable) attachSlotPicker(rail, day, L);
-  content.appendChild(rail);
+  const card = document.createElement('div');
+  card.className = 'railcard';
+  card.appendChild(rail);
+  content.appendChild(card);
   renderNowLine(rail, day);
   content.appendChild(renderSummary(day));
 
