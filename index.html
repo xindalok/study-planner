@@ -295,9 +295,9 @@ button.ghost.warn:active{background:#F7DDDC}
 
 /* ---------- break timer + mute ---------- */
 .mute{
-  position:fixed;right:14px;bottom:14px;width:44px;height:44px;
-  border-radius:50%;background:var(--panel);border:1px solid var(--line);
-  display:grid;place-items:center;cursor:pointer;padding:0;z-index:120
+  margin-left:auto;flex:0 0 auto;width:42px;height:38px;
+  border-radius:8px;background:var(--panel);border:1px solid var(--line);
+  display:grid;place-items:center;cursor:pointer;padding:0
 }
 .mute svg{width:20px;height:20px;stroke:var(--muted);stroke-width:1.8;
   fill:none;stroke-linecap:round;stroke-linejoin:round}
@@ -305,7 +305,7 @@ button.ghost.warn:active{background:#F7DDDC}
 .mute[aria-pressed="true"] svg{stroke:#A33B3A}
 
 .breaktimer{
-  position:fixed;left:14px;right:70px;bottom:14px;z-index:120;
+  position:fixed;left:14px;right:14px;bottom:14px;z-index:120;
   display:flex;align-items:center;gap:10px;
   background:var(--rest-deep);border:1px solid var(--rest-line);
   border-radius:12px;padding:9px 10px 9px 13px;
@@ -359,9 +359,6 @@ button.ghost.warn:active{background:#F7DDDC}
   <button class="bt-x" id="btDismiss" aria-label="Dismiss break timer">✕</button>
 </div>
 
-<button class="mute" id="mute" aria-label="Mute break chime" aria-pressed="false">
-  <svg viewBox="0 0 24 24" id="muteIcon"></svg>
-</button>
 
 <script>
 // ---------------------------------------------------------------- config
@@ -381,6 +378,14 @@ const TRIGGER_OK = <?!= trigger ?>;
 // subject fell below the fold. Breaks are 15px, which is legible now that they
 // have a solid fill. Heights stay strictly proportional to the gridlines.
 const PX_PER_MIN = 1.5;
+
+// Mute lives up here because render() builds the button and runs during boot,
+// before the timer section below would have initialised these.
+let muted = false;
+try { muted = localStorage.getItem('planner.muted') === '1'; } catch(e){}
+const BELL = '<path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/>'
+           + '<path d="M13.7 21a2 2 0 0 1-3.4 0"/>';
+const BELL_OFF = BELL + '<path d="M3 3l18 18"/>';
 
 // The visible window per day type. Times after midnight are written as they
 // read on a clock; toMin() rolls them past 24h so the canvas stays continuous.
@@ -678,6 +683,31 @@ function refreshSummary(){
   if(el && day) el.innerHTML = summaryHTML(day);
 }
 
+/**
+ * Sound toggle, built fresh each render so it can live in the actions row —
+ * render() clears #content, so a long-lived element there would go stale.
+ * Toggling repaints in place rather than re-rendering the whole day.
+ */
+function muteButton(){
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'mute';
+  b.title = 'Sound on/off';
+  const paint = () => {
+    b.setAttribute('aria-pressed', String(muted));
+    b.setAttribute('aria-label', muted ? 'Unmute chimes' : 'Mute chimes');
+    b.innerHTML = '<svg viewBox="0 0 24 24">' + (muted ? BELL_OFF : BELL) + '</svg>';
+  };
+  b.onclick = () => {
+    muted = !muted;
+    try { localStorage.setItem('planner.muted', muted ? '1' : '0'); } catch(e){}
+    paint();
+    toast(muted ? 'Chimes muted' : 'Chimes on');
+  };
+  paint();
+  return b;
+}
+
 function render(){
   const day = dayById(state.selected) || dayById(state.today) || state.days[0];
   if(!day){
@@ -776,6 +806,8 @@ function render(){
   refresh.textContent = 'Refresh';
   refresh.onclick = load;
   actions.appendChild(refresh);
+
+  actions.appendChild(muteButton());   // right edge of the same row
   content.appendChild(actions);
 }
 
@@ -970,27 +1002,6 @@ setInterval(() => {
  * Mute is remembered in localStorage, with an in-memory fallback because the
  * Apps Script sandbox can refuse storage access.
  */
-let muted = false;
-try { muted = localStorage.getItem('planner.muted') === '1'; } catch(e){}
-
-const BELL = '<path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/>'
-           + '<path d="M13.7 21a2 2 0 0 1-3.4 0"/>';
-const BELL_OFF = BELL + '<path d="M3 3l18 18"/>';
-
-function paintMute(){
-  $('mute').setAttribute('aria-pressed', String(muted));
-  $('mute').setAttribute('aria-label', muted ? 'Unmute break chime' : 'Mute break chime');
-  $('muteIcon').innerHTML = muted ? BELL_OFF : BELL;
-}
-
-$('mute').onclick = () => {
-  muted = !muted;
-  try { localStorage.setItem('planner.muted', muted ? '1' : '0'); } catch(e){}
-  paintMute();
-  toast(muted ? 'Break chime muted' : 'Break chime on');
-};
-paintMute();
-
 // Two short tones via Web Audio — no asset to load, nothing for CSP to block.
 function chime(){
   if(muted) return;
@@ -1013,17 +1024,18 @@ function chime(){
   }catch(e){}
 }
 
-let activeBreak = null;      // id of the break being counted down
+let activeBlock = null;      // id of whatever block is running right now
+let primed = false;          // first tick only records position — see below
 let dismissed = null;        // id the user dismissed, so it stays hidden
 
 $('btDismiss').onclick = () => {
-  dismissed = activeBreak;
+  dismissed = activeBlock;
   $('breaktimer').hidden = true;
 };
 
 function pad(n){ return (n < 10 ? '0' : '') + n; }
 
-function tickBreak(){
+function tickTimer(){
   const day = dayById(state.today);
   if(!day){ $('breaktimer').hidden = true; return; }
 
@@ -1036,18 +1048,29 @@ function tickBreak(){
   for(const p of L.placed){
     if(mins >= p.from && mins < p.to){ cur = p; break; }
   }
+  const id = cur ? cur.block.id : null;
 
-  if(!cur || !isBreak(cur.block.kind)){
-    activeBreak = null;
+  if(id !== activeBlock){
+    // The very first tick must not chime: opening the app in the middle of a
+    // block is not the block starting, and it would sound on every reload.
+    const wasPrimed = primed;
+    activeBlock = id;
+    if(wasPrimed && cur && (cur.block.kind === 'focus' || isBreak(cur.block.kind))){
+      chime();                         // a study block or a break just began
+    }
+  }
+  // Primed after ANY tick, not just one that changed block. Opening the app
+  // before the day starts leaves activeBlock null with no change to observe,
+  // and priming inside the branch above made the first block of the night
+  // look like the page load — so it never chimed.
+  primed = true;
+
+  // the countdown itself is for breaks — a bar pinned there all evening for
+  // every focus block would just be in the way
+  if(!cur || !isBreak(cur.block.kind) || dismissed === activeBlock){
     $('breaktimer').hidden = true;
     return;
   }
-
-  if(activeBreak !== cur.block.id){
-    activeBreak = cur.block.id;        // a break just started
-    chime();
-  }
-  if(dismissed === activeBreak){ $('breaktimer').hidden = true; return; }
 
   const left = Math.max(0, (cur.to - mins) * 60);
   $('btName').textContent = cur.block.task;
@@ -1056,8 +1079,8 @@ function tickBreak(){
   $('breaktimer').hidden = false;
 }
 
-tickBreak();
-setInterval(tickBreak, 1000);
+tickTimer();
+setInterval(tickTimer, 1000);
 </script>
 </body>
 </html>
