@@ -232,6 +232,11 @@ button.ghost{
   font-family:inherit
 }
 button.ghost:active{background:#F7E9EE}
+/* the only visible sign a delay exists, so give it some weight */
+button.ghost.warn{
+  background:#FBEBEA;border-color:rgba(226,75,74,.4);color:#A33B3A;font-weight:500
+}
+button.ghost.warn:active{background:#F7DDDC}
 .msg{
   padding:26px 16px;text-align:center;color:var(--muted);font-size:14px;
   border:1px dashed var(--line);border-radius:var(--radius);margin-top:18px
@@ -361,6 +366,7 @@ const apiPost = payload => {
     case 'setStart': return call('apiSetStart', payload.field, payload.value);
     case 'replan':   return call('apiReplan', payload.date);
     case 'setDelay': return call('apiSetDelay', payload.date, payload.id, payload.minutes);
+    case 'clearDelays': return call('apiClearDelays', payload.date);
     default:         return Promise.resolve({ok:false, error:'unknown action'});
   }
 };
@@ -614,6 +620,24 @@ function render(){
 
   const actions = document.createElement('div');
   actions.className = 'actions';
+
+  // Delays aren't drawn, so this button is the only sign one exists — and the
+  // only easy way out of it. Shown only when the day actually has one.
+  const delayed = day.blocks.filter(b => b.kind === 'gap');
+  if(editable && delayed.length){
+    const mins = delayed.reduce((a,b) => a + b.duration, 0);
+    const cb = document.createElement('button');
+    cb.className = 'ghost warn';
+    cb.textContent = 'Clear ' + mins + 'm delay';
+    cb.onclick = async () => {
+      toast('Clearing…');
+      const r = await apiPost({action:'clearDelays', date:day.date});
+      if(r.ok){ absorb(r.data); render(); toast('Delay cleared'); }
+      else toast('Could not clear');
+    };
+    actions.appendChild(cb);
+  }
+
   if(editable){
     const rb = document.createElement('button');
     rb.className = 'ghost';
