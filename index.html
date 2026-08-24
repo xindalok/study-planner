@@ -325,6 +325,25 @@ button.ghost.warn:active{background:#F7DDDC}
   font-size:13px;cursor:pointer;padding:0
 }
 .bt-x:active{background:rgba(43,42,92,.06)}
+.bt-x[hidden],.bt-ack[hidden],.bt-left[hidden]{display:none}
+
+/* the alarm state: sounding, and waiting to be acknowledged */
+.breaktimer.alerting{
+  background:#FFF1D9;border-color:#F0C36B;
+  animation:pulse 1.6s ease-in-out infinite
+}
+.breaktimer.alerting .bt-label b{color:#5C3A05}
+.breaktimer.alerting .bt-label span{color:#8A5E12}
+@keyframes pulse{
+  0%,100%{box-shadow:0 6px 20px rgba(43,42,92,.16)}
+  50%{box-shadow:0 6px 26px rgba(240,195,107,.75)}
+}
+.bt-ack{
+  flex:0 0 auto;border-radius:9px;padding:9px 16px;
+  background:#5C3A05;border:1px solid #5C3A05;color:#fff;
+  font-family:inherit;font-size:14px;font-weight:600;cursor:pointer
+}
+.bt-ack:active{background:#432A03}
 @media (max-width:400px){ .bt-label span{display:none} }
 :focus-visible{outline:2px solid var(--ink);outline-offset:2px}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
@@ -356,6 +375,7 @@ button.ghost.warn:active{background:#F7DDDC}
     <span id="btEnds"></span>
   </div>
   <div class="bt-left" id="btLeft">00:00</div>
+  <button class="bt-ack" id="btAck" hidden>Got it</button>
   <button class="bt-x" id="btDismiss" aria-label="Dismiss break timer">✕</button>
 </div>
 
@@ -701,6 +721,8 @@ function muteButton(){
   b.onclick = () => {
     muted = !muted;
     try { localStorage.setItem('planner.muted', muted ? '1' : '0'); } catch(e){}
+    // muting mid-alarm should stop it now, not at the next repeat
+    if(muted) acknowledge();
     paint();
     toast(muted ? 'Chimes muted' : 'Chimes on');
   };
@@ -1024,9 +1046,19 @@ function chime(){
   }catch(e){}
 }
 
+const REPEAT_MS = 3500;      // gap between repeats of an unacknowledged alarm
+
 let activeBlock = null;      // id of whatever block is running right now
 let primed = false;          // first tick only records position — see below
 let dismissed = null;        // id the user dismissed, so it stays hidden
+let alertBlock = null;       // block whose start alarm is still unacknowledged
+let lastChime = 0;
+
+function acknowledge(){
+  alertBlock = null;
+}
+
+$('btAck').onclick = acknowledge;
 
 $('btDismiss').onclick = () => {
   dismissed = activeBlock;
@@ -1055,8 +1087,9 @@ function tickTimer(){
     // block is not the block starting, and it would sound on every reload.
     const wasPrimed = primed;
     activeBlock = id;
+    alertBlock = null;                 // a new block supersedes any old alarm
     if(wasPrimed && cur && (cur.block.kind === 'focus' || isBreak(cur.block.kind))){
-      chime();                         // a study block or a break just began
+      if(!muted){ alertBlock = id; lastChime = 0; }
     }
   }
   // Primed after ANY tick, not just one that changed block. Opening the app
@@ -1064,6 +1097,28 @@ function tickTimer(){
   // and priming inside the branch above made the first block of the night
   // look like the page load — so it never chimed.
   primed = true;
+
+  // Keep sounding until acknowledged. Repeats stop on their own when the block
+  // ends, so an alarm nobody hears cannot ring all night.
+  if(alertBlock && alertBlock === activeBlock && !muted){
+    const t = Date.now();
+    if(t - lastChime >= REPEAT_MS){ chime(); lastChime = t; }
+
+    $('breaktimer').classList.add('alerting');
+    $('btName').textContent = cur.block.task;
+    $('btEnds').textContent = (isBreak(cur.block.kind) ? 'break started · ' : 'started · ')
+      + cur.block.start;
+    $('btLeft').hidden = true;
+    $('btAck').hidden = false;
+    $('btDismiss').hidden = true;
+    $('breaktimer').hidden = false;
+    return;
+  }
+
+  $('breaktimer').classList.remove('alerting');
+  $('btLeft').hidden = false;
+  $('btAck').hidden = true;
+  $('btDismiss').hidden = false;
 
   // the countdown itself is for breaks — a bar pinned there all evening for
   // every focus block would just be in the way
