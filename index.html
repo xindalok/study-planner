@@ -155,7 +155,8 @@ h1{
 }
 .block.long_break .body{background:var(--rest-deep)}
 .block.break .label{font-size:11px;font-weight:500;line-height:1}
-.block.break .meta{font-size:10px;opacity:.7}
+.block.break .from{font-size:10px;font-weight:500}
+.block.break .to{font-size:10px;opacity:.6}
 
 /* blocked-out time: not study, not a break — hatched so it reads as unavailable */
 .block.blocked .body{
@@ -164,7 +165,8 @@ h1{
   border:1px solid #CFC6D2;color:#5F5768;cursor:pointer;padding:0 8px
 }
 .block.blocked .label{font-size:11px;font-weight:500;line-height:1}
-.block.blocked .meta{font-size:10px;opacity:.7}
+.block.blocked .from{font-size:10px;font-weight:500}
+.block.blocked .to{font-size:10px;opacity:.6}
 
 /* bookmark: faint until a link is saved, then solid */
 .bm{
@@ -237,20 +239,17 @@ button.ghost.primary{
 }
 .grip{position:relative}
 
-/* label stacked over its clock range; taking the range out of the horizontal
-   run also gives the task name more width before it truncates */
-.text{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center}
-.label{font-size:13px;font-weight:500;letter-spacing:-.01em;line-height:1.25;
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.meta{font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:400;
+/* Start at the left edge, end at the right — the block's width reads as its
+   span. Tabular figures so the two columns line up down the whole evening. */
+.from,.to{
+  flex:0 0 auto;font-family:'JetBrains Mono',monospace;
   font-variant-numeric:tabular-nums;font-feature-settings:'tnum' 1;
-  opacity:.6;line-height:1.3;white-space:nowrap;letter-spacing:0}
-
-/* short blocks have no room to stack, so they read as a single row */
-.block.break .text,
-.block.blocked .text{flex-direction:row;align-items:center;gap:8px}
-.block.break .meta,
-.block.blocked .meta{margin-left:auto;flex:0 0 auto}
+  letter-spacing:-.02em;line-height:1;white-space:nowrap
+}
+.from{font-size:12.5px;font-weight:600}
+.to{font-size:11px;opacity:.55}
+.label{flex:1;min-width:0;font-size:13px;font-weight:500;letter-spacing:-.01em;
+  line-height:1.25;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
 .tick{
   flex:0 0 auto;width:18px;height:18px;border-radius:5px;
@@ -638,25 +637,23 @@ function blockEl(b, editable){
     body.appendChild(tick);
   }
 
-  // task on one line, its actual clock range under it — a 30-min block is 45px,
-  // which fits both. Breaks are 15px, so their text lays out in a row instead.
-  const text = document.createElement('div');
-  text.className = 'text';
+  // Start at the left edge, end at the right, name between: the block's width
+  // reads as its span. Start leads and the end recedes to reference. A single
+  // row, so a 45px focus block and a 15px break lay out identically.
+  const from = document.createElement('div');
+  from.className = 'from';
+  from.textContent = b.start;
+  body.appendChild(from);
 
   const label = document.createElement('div');
   label.className = 'label';
   label.textContent = b.task;
-  text.appendChild(label);
+  body.appendChild(label);
 
-  const meta = document.createElement('div');
-  meta.className = 'meta';
-  // hair spaces around the en dash: '22:40 – 23:10' reads as a range, where
-  // '22:40–23:10' reads as one long number. Duration is dropped — the block's
-  // height and the gridlines already carry it.
-  meta.textContent = b.start + '\u2009\u2013\u2009' + b.end;
-  text.appendChild(meta);
-
-  body.appendChild(text);
+  const to = document.createElement('div');
+  to.className = 'to';
+  to.textContent = b.end;
+  body.appendChild(to);
 
   // tap a blocked slot to give the time back
   if(b.kind === 'blocked' && editable){
