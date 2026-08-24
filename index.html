@@ -166,6 +166,50 @@ h1{
 .block.blocked .label{font-size:11px;font-weight:500;line-height:1}
 .block.blocked .meta{font-size:10px;opacity:.8}
 
+/* bookmark: faint until a link is saved, then solid */
+.bm{
+  flex:0 0 auto;width:26px;height:26px;border-radius:6px;padding:0;
+  background:transparent;border:1px solid transparent;color:inherit;
+  display:grid;place-items:center;cursor:pointer;opacity:.4
+}
+.bm svg{width:15px;height:15px;stroke:currentColor;stroke-width:1.8;fill:none;
+  stroke-linejoin:round}
+.bm.set{opacity:1}
+.bm.set svg{fill:currentColor}
+.bm:active{background:rgba(255,255,255,.5)}
+
+/* bookmark editor sheet */
+.sheet-back{
+  position:fixed;inset:0;z-index:300;background:rgba(43,42,92,.35);
+  display:flex;align-items:flex-end;justify-content:center
+}
+.sheet{
+  background:var(--paper);border-top-left-radius:16px;border-top-right-radius:16px;
+  width:100%;max-width:520px;padding:18px 16px 22px;
+  display:flex;flex-direction:column;gap:9px
+}
+.sheet h3{
+  font-family:'Space Grotesk',sans-serif;font-size:17px;font-weight:700;
+  margin:0 0 2px;color:var(--ink)
+}
+.sheet input{
+  width:100%;background:var(--panel);border:1px solid var(--line);color:var(--ink);
+  border-radius:8px;padding:11px 12px;font-family:inherit;font-size:15px
+}
+.sheet input:focus{outline:2px solid var(--ink);outline-offset:1px}
+.sheet-row{display:flex;gap:8px;margin-top:4px}
+.sheet-row button{flex:1 1 0}
+button.ghost.primary{
+  background:var(--ink);border-color:var(--ink);color:#fff;font-weight:600
+}
+.bm-open{
+  display:block;background:var(--appdev);color:var(--appdev-ink);
+  border-radius:9px;padding:12px 13px;font-size:14px;font-weight:600;
+  text-decoration:none
+}
+.bm-meta{margin:0;font-size:11px;color:var(--muted);
+  font-family:'JetBrains Mono',monospace}
+
 /* tap-empty-grid affordance */
 .slotpick{
   position:absolute;left:48px;right:0;z-index:30;
@@ -450,7 +494,7 @@ function layout(day){
 }
 
 // ---------------------------------------------------------------- state
-let state = { days: [], today: null, settings: {}, selected: null };
+let state = { days: [], today: null, settings: {}, bookmarks: {}, selected: null };
 
 const $ = id => document.getElementById(id);
 const content = $('content');
@@ -487,6 +531,7 @@ const apiPost = payload => {
     case 'replan':   return call('apiReplan', payload.date);
     case 'setDelay': return call('apiSetDelay', payload.date, payload.id, payload.minutes);
     case 'clearDelays': return call('apiClearDelays', payload.date);
+    case 'bookmark':  return call('apiSetBookmark', payload.subject, payload.url, payload.note);
     case 'blockOut':  return call('apiBlockOut', payload.date, payload.beforeId, payload.minutes);
     case 'unblock':   return call('apiUnblock', payload.date, payload.id);
     default:         return Promise.resolve({ok:false, error:'unknown action'});
@@ -646,6 +691,23 @@ function blockEl(b, editable){
     body.onkeydown = e => { if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); toggle(); } };
   }
 
+  // Bookmark: where you left off in this SUBJECT. It belongs to the subject,
+  // not to one night's block — but it only offers to resume on a LATER day
+  // than it was saved. Saving it tonight is not something to pick up from in
+  // tonight's next block; it is for the next time the subject comes round.
+  if(b.kind === 'focus' && b.subject){
+    const mark = state.bookmarks[b.subject];
+    const canResume = !!(mark && mark.url && b._date > mark.updated);
+    const bm = document.createElement('button');
+    bm.type = 'button';
+    bm.className = 'bm' + (canResume ? ' set' : '');
+    bm.title = canResume ? 'Resume ' + b.subject : 'Save a link for ' + b.subject;
+    bm.setAttribute('aria-label', bm.title);
+    bm.innerHTML = '<svg viewBox="0 0 24 24"><path d="M6 3h12v18l-6-4.5L6 21z"/></svg>';
+    bm.onclick = e => { e.stopPropagation(); openBookmark(b.subject, b._date); };
+    body.appendChild(bm);
+  }
+
   // Only focus blocks get a grip. Breaks are carried by the block above them,
   // so an independent break handle would just be a way to break the pairing.
   if(editable && b.kind === 'focus'){
@@ -664,6 +726,89 @@ function blockEl(b, editable){
  * Heights are strictly proportional now, so the marker is placed straight from
  * the clock rather than interpolated inside a block — it is exact.
  */
+/**
+ * Bookmark editor. Opening the saved link uses a real anchor with target
+ * _blank rather than window.open, which the Apps Script sandbox blocks.
+ * Only http(s) links are accepted — a javascript: URL here would execute.
+ */
+function openBookmark(subject, onDate){
+  const existing = state.bookmarks[subject] || {};
+  // resume only on a later day than the one it was saved on
+  const canResume = !!(existing.url && onDate > existing.updated);
+
+  const back = document.createElement('div');
+  back.className = 'sheet-back';
+
+  const card = document.createElement('div');
+  card.className = 'sheet';
+  card.innerHTML = '<h3></h3>';
+  card.querySelector('h3').textContent = subject;
+
+  if(canResume){
+    const open = document.createElement('a');
+    open.className = 'bm-open';
+    open.href = existing.url;
+    open.target = '_blank';
+    open.rel = 'noopener noreferrer';
+    open.textContent = 'Pick up where you left off  ↗';
+    card.appendChild(open);
+    const was = document.createElement('p');
+    was.className = 'bm-meta';
+    was.textContent = (existing.note ? existing.note + ' · ' : '') +
+      'saved ' + (existing.updated || '');
+    card.appendChild(was);
+  }
+
+  // saved today: say so, rather than silently showing no resume link
+  if(existing.url && !canResume){
+    const soon = document.createElement('p');
+    soon.className = 'bm-meta';
+    soon.textContent = 'Saved ' + existing.updated + ' — this link appears from the next day onwards.';
+    card.appendChild(soon);
+  }
+
+  const url = document.createElement('input');
+  url.type = 'url';
+  url.placeholder = 'https://…';
+  url.value = existing.url || '';
+  card.appendChild(url);
+
+  const note = document.createElement('input');
+  note.type = 'text';
+  note.placeholder = 'Note (optional) — e.g. "lesson 4, halfway"';
+  note.value = existing.note || '';
+  card.appendChild(note);
+
+  const row = document.createElement('div');
+  row.className = 'sheet-row';
+
+  const save = document.createElement('button');
+  save.className = 'ghost primary';
+  save.textContent = 'Save';
+  save.onclick = async () => {
+    const v = url.value.trim();
+    if(v && !/^https?:\/\//i.test(v)){ toast('Link must start with http:// or https://'); return; }
+    back.remove();
+    toast('Saving bookmark…');
+    const r = await apiPost({action:'bookmark', subject:subject, url:v, note:note.value.trim()});
+    if(r.ok){ absorb(r.data); render(); toast(v ? 'Bookmark saved' : 'Bookmark cleared'); }
+    else toast(r.error || 'Could not save');
+  };
+  row.appendChild(save);
+
+  const cancel = document.createElement('button');
+  cancel.className = 'ghost';
+  cancel.textContent = 'Cancel';
+  cancel.onclick = () => back.remove();
+  row.appendChild(cancel);
+
+  card.appendChild(row);
+  back.appendChild(card);
+  back.onclick = e => { if(e.target === back) back.remove(); };
+  document.body.appendChild(back);
+  url.focus();
+}
+
 function renderNowLine(rail, day){
   if(!day || day.date !== state.today) return;
   const L = layout(day);
@@ -983,6 +1128,7 @@ function absorb(data){
   state.days = data.days;
   state.today = data.today;
   state.settings = data.settings;
+  state.bookmarks = data.bookmarks || {};
   if(!state.selected) state.selected = data.today;
 }
 
