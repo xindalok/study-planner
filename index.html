@@ -292,6 +292,40 @@ button.ghost.warn:active{background:#F7DDDC}
   transition:transform .22s cubic-bezier(.2,.8,.3,1);z-index:100
 }
 .toast.show{transform:translateX(-50%) translateY(0)}
+
+/* ---------- break timer + mute ---------- */
+.mute{
+  position:fixed;right:14px;bottom:14px;width:44px;height:44px;
+  border-radius:50%;background:var(--panel);border:1px solid var(--line);
+  display:grid;place-items:center;cursor:pointer;padding:0;z-index:120
+}
+.mute svg{width:20px;height:20px;stroke:var(--muted);stroke-width:1.8;
+  fill:none;stroke-linecap:round;stroke-linejoin:round}
+.mute[aria-pressed="true"]{background:#FBEBEA;border-color:rgba(226,75,74,.4)}
+.mute[aria-pressed="true"] svg{stroke:#A33B3A}
+
+.breaktimer{
+  position:fixed;left:14px;right:70px;bottom:14px;z-index:120;
+  display:flex;align-items:center;gap:10px;
+  background:var(--rest-deep);border:1px solid var(--rest-line);
+  border-radius:12px;padding:9px 10px 9px 13px;
+  box-shadow:0 6px 20px rgba(43,42,92,.16)
+}
+.breaktimer[hidden]{display:none}
+.bt-label{flex:1;min-width:0;line-height:1.25}
+.bt-label b{display:block;font-size:13px;font-weight:600;color:var(--ink)}
+.bt-label span{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--rest-ink)}
+.bt-left{
+  font-family:'JetBrains Mono',monospace;font-size:19px;font-weight:600;
+  color:var(--ink);flex:0 0 auto;letter-spacing:-.02em
+}
+.bt-x{
+  flex:0 0 auto;width:30px;height:30px;border-radius:8px;
+  background:transparent;border:1px solid var(--rest-line);color:var(--rest-ink);
+  font-size:13px;cursor:pointer;padding:0
+}
+.bt-x:active{background:rgba(43,42,92,.06)}
+@media (max-width:400px){ .bt-label span{display:none} }
 :focus-visible{outline:2px solid var(--ink);outline-offset:2px}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 </style>
@@ -315,6 +349,19 @@ button.ghost.warn:active{background:#F7DDDC}
 </div>
 
 <div class="toast" id="toast"></div>
+
+<div class="breaktimer" id="breaktimer" hidden>
+  <div class="bt-label">
+    <b id="btName">Short break</b>
+    <span id="btEnds"></span>
+  </div>
+  <div class="bt-left" id="btLeft">00:00</div>
+  <button class="bt-x" id="btDismiss" aria-label="Dismiss break timer">✕</button>
+</div>
+
+<button class="mute" id="mute" aria-label="Mute break chime" aria-pressed="false">
+  <svg viewBox="0 0 24 24" id="muteIcon"></svg>
+</button>
 
 <script>
 // ---------------------------------------------------------------- config
@@ -913,6 +960,104 @@ setInterval(() => {
   if(old) old.remove();
   renderNowLine(r, d);
 }, 60000);
+
+// ---------------------------------------------------------------- break timer
+/**
+ * Counts down whatever break is running right now, and chimes once when one
+ * starts. Only works while this page is open — a web page cannot alert you
+ * after it is closed. The Telegram bot would be the way to get that.
+ *
+ * Mute is remembered in localStorage, with an in-memory fallback because the
+ * Apps Script sandbox can refuse storage access.
+ */
+let muted = false;
+try { muted = localStorage.getItem('planner.muted') === '1'; } catch(e){}
+
+const BELL = '<path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/>'
+           + '<path d="M13.7 21a2 2 0 0 1-3.4 0"/>';
+const BELL_OFF = BELL + '<path d="M3 3l18 18"/>';
+
+function paintMute(){
+  $('mute').setAttribute('aria-pressed', String(muted));
+  $('mute').setAttribute('aria-label', muted ? 'Unmute break chime' : 'Mute break chime');
+  $('muteIcon').innerHTML = muted ? BELL_OFF : BELL;
+}
+
+$('mute').onclick = () => {
+  muted = !muted;
+  try { localStorage.setItem('planner.muted', muted ? '1' : '0'); } catch(e){}
+  paintMute();
+  toast(muted ? 'Break chime muted' : 'Break chime on');
+};
+paintMute();
+
+// Two short tones via Web Audio — no asset to load, nothing for CSP to block.
+function chime(){
+  if(muted) return;
+  try{
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if(!AC) return;
+    const ctx = new AC();
+    const t0 = ctx.currentTime;
+    [[0,660],[0.18,880]].forEach(([at,hz]) => {
+      const osc = ctx.createOscillator(), gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = hz;
+      gain.gain.setValueAtTime(0.0001, t0 + at);
+      gain.gain.exponentialRampToValueAtTime(0.22, t0 + at + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + at + 0.17);
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.start(t0 + at); osc.stop(t0 + at + 0.2);
+    });
+    setTimeout(() => { try { ctx.close(); } catch(e){} }, 900);
+  }catch(e){}
+}
+
+let activeBreak = null;      // id of the break being counted down
+let dismissed = null;        // id the user dismissed, so it stays hidden
+
+$('btDismiss').onclick = () => {
+  dismissed = activeBreak;
+  $('breaktimer').hidden = true;
+};
+
+function pad(n){ return (n < 10 ? '0' : '') + n; }
+
+function tickBreak(){
+  const day = dayById(state.today);
+  if(!day){ $('breaktimer').hidden = true; return; }
+
+  const L = layout(day);
+  const now = new Date();
+  let mins = now.getHours()*60 + now.getMinutes() + now.getSeconds()/60;
+  if(mins < L.from) mins += 1440;      // after-midnight blocks belong to tonight
+
+  let cur = null;
+  for(const p of L.placed){
+    if(mins >= p.from && mins < p.to){ cur = p; break; }
+  }
+
+  if(!cur || !isBreak(cur.block.kind)){
+    activeBreak = null;
+    $('breaktimer').hidden = true;
+    return;
+  }
+
+  if(activeBreak !== cur.block.id){
+    activeBreak = cur.block.id;        // a break just started
+    chime();
+  }
+  if(dismissed === activeBreak){ $('breaktimer').hidden = true; return; }
+
+  const left = Math.max(0, (cur.to - mins) * 60);
+  $('btName').textContent = cur.block.task;
+  $('btEnds').textContent = 'ends ' + cur.block.end;
+  $('btLeft').textContent = pad(Math.floor(left / 60)) + ':' + pad(Math.floor(left % 60));
+  $('breaktimer').hidden = false;
+}
+
+tickBreak();
+setInterval(tickBreak, 1000);
 </script>
 </body>
 </html>
