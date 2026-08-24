@@ -103,13 +103,15 @@ h1{
    time, so heights must be strictly proportional to duration or they would
    drift off the gridlines. */
 .rail{position:relative;margin:16px 0 0;padding-left:48px}
-/* Gridlines paint ABOVE the blocks. Underneath they were hidden by opaque
-   pastel fills, leaving only the gutter label visible — which reads as the
-   grid being out of true with the times even when it isn't. */
+/* Gridlines sit BEHIND the blocks, so they rule the empty grid you can drop
+   into and stop where a block starts. They were briefly drawn on top to fix
+   apparent misalignment, but the real cause of that was the label floating
+   above its line — fixed by centring it below — and lines cutting across every
+   block just made the column noisy. */
 .gridline{
   position:absolute;left:0;right:0;height:1px;
   background:rgba(249,198,211,.55);
-  pointer-events:none;z-index:5
+  pointer-events:none;z-index:0
 }
 .gridline.hour{background:rgba(233,150,175,.85)}
 /* centred on the line rather than floating 7px above it */
@@ -128,7 +130,8 @@ h1{
 
 /* A group is one focus block plus the break that follows it. Groups are what
    you drag; the break travels with its block. */
-.group{position:absolute;left:48px;right:0}
+/* above the gridlines regardless of DOM order, so lines never cross a block */
+.group{position:absolute;left:48px;right:0;z-index:1}
 .block{
   position:relative;display:flex;align-items:stretch;touch-action:pan-y
 }
