@@ -252,6 +252,7 @@ h1{
   font-family:'JetBrains Mono',monospace;flex-wrap:wrap
 }
 .summary b{color:var(--ink);font-weight:600}
+.summary .warn{color:#A33B3A;font-weight:600}
 .actions{display:flex;gap:8px;margin-top:14px}
 button.ghost{
   background:var(--panel);border:1px solid var(--line);color:var(--muted);
@@ -308,6 +309,10 @@ button.ghost.warn:active{background:#F7DDDC}
 // doGet inlines the schedule here, so the timetable renders immediately with
 // no network round trip. null only if the server hit an error building it.
 const BOOTSTRAP = <?!= bootstrap ?>;
+
+// whether the daily trigger is installed — shown in the footer so a silent
+// failure to install it is visible rather than discovered weeks later
+const TRIGGER_OK = <?!= trigger ?>;
 
 // 1.5px/min keeps the whole evening on one screen — at 2px/min the second
 // subject fell below the fold. Breaks are 15px, which is legible now that they
@@ -584,7 +589,8 @@ function summaryHTML(day){
   const done = focus.filter(b=>b.done).length;
   return '<div><b>' + done + '/' + focus.length + '</b> done</div>' +
     '<div><b>' + (done*30/60).toFixed(1) + 'h</b> logged</div>' +
-    '<div>ends <b>' + day.blocks[day.blocks.length-1].end + '</b></div>';
+    '<div>ends <b>' + day.blocks[day.blocks.length-1].end + '</b></div>' +
+    (TRIGGER_OK ? '' : '<div class="warn">daily trigger not installed</div>');
 }
 
 function renderSummary(day){
