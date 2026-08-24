@@ -155,7 +155,7 @@ h1{
 }
 .block.long_break .body{background:var(--rest-deep)}
 .block.break .label{font-size:11px;font-weight:500;line-height:1}
-.block.break .dur{font-size:10px;opacity:.8}
+.block.break .meta{font-size:10px;opacity:.8}
 
 /* blocked-out time: not study, not a break — hatched so it reads as unavailable */
 .block.blocked .body{
@@ -164,7 +164,7 @@ h1{
   border:1px solid #CFC6D2;color:#5F5768;cursor:pointer;padding:0 8px
 }
 .block.blocked .label{font-size:11px;font-weight:500;line-height:1}
-.block.blocked .dur{font-size:10px;opacity:.8}
+.block.blocked .meta{font-size:10px;opacity:.8}
 
 /* tap-empty-grid affordance */
 .slotpick{
@@ -193,9 +193,19 @@ h1{
 }
 .grip{position:relative}
 
-.label{flex:1;font-size:13px;font-weight:500;letter-spacing:-.01em;
+/* label stacked over its clock range; taking the range out of the horizontal
+   run also gives the task name more width before it truncates */
+.text{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center}
+.label{font-size:13px;font-weight:500;letter-spacing:-.01em;line-height:1.25;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.dur{font-family:'JetBrains Mono',monospace;font-size:10px;opacity:.75;flex:0 0 auto}
+.meta{font-family:'JetBrains Mono',monospace;font-size:10px;opacity:.72;
+  line-height:1.25;white-space:nowrap}
+
+/* short blocks have no room to stack, so they read as a single row */
+.block.break .text,
+.block.blocked .text{flex-direction:row;align-items:center;gap:8px}
+.block.break .meta,
+.block.blocked .meta{margin-left:auto;flex:0 0 auto}
 
 .tick{
   flex:0 0 auto;width:18px;height:18px;border-radius:5px;
@@ -242,10 +252,13 @@ h1{
   content:'';position:absolute;left:44px;top:-4px;
   width:9px;height:9px;border-radius:50%;background:var(--now)
 }
+/* right-aligned: in the gutter it sat on top of the half-hour label whenever
+   the current time was near one, which is most of the time */
 .nowline span{
-  position:absolute;left:0;top:-6px;
+  position:absolute;right:2px;top:-6px;
   font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--now);
-  letter-spacing:.06em;font-weight:600
+  letter-spacing:.06em;font-weight:600;
+  background:var(--paper);padding:0 3px;border-radius:3px
 }
 
 /* ---------- footer / states ---------- */
@@ -507,15 +520,22 @@ function blockEl(b, editable){
     body.appendChild(tick);
   }
 
+  // task on one line, its actual clock range under it — a 30-min block is 45px,
+  // which fits both. Breaks are 15px, so their text lays out in a row instead.
+  const text = document.createElement('div');
+  text.className = 'text';
+
   const label = document.createElement('div');
   label.className = 'label';
   label.textContent = b.task;
-  body.appendChild(label);
+  text.appendChild(label);
 
-  const dur = document.createElement('div');
-  dur.className = 'dur';
-  dur.textContent = b.duration + 'm';
-  body.appendChild(dur);
+  const meta = document.createElement('div');
+  meta.className = 'meta';
+  meta.textContent = b.start + '–' + b.end + '  ·  ' + b.duration + 'm';
+  text.appendChild(meta);
+
+  body.appendChild(text);
 
   // tap a blocked slot to give the time back
   if(b.kind === 'blocked' && editable){
