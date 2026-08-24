@@ -154,6 +154,33 @@ h1{
 .block.break .label{font-size:11px;font-weight:500;line-height:1}
 .block.break .dur{font-size:10px;opacity:.8}
 
+/* blocked-out time: not study, not a break — hatched so it reads as unavailable */
+.block.blocked .body{
+  background:repeating-linear-gradient(135deg,
+    #EEEAEF 0 7px, #E2DCE4 7px 14px);
+  border:1px solid #CFC6D2;color:#5F5768;cursor:pointer;padding:0 8px
+}
+.block.blocked .label{font-size:11px;font-weight:500;line-height:1}
+.block.blocked .dur{font-size:10px;opacity:.8}
+
+/* tap-empty-grid affordance */
+.slotpick{
+  position:absolute;left:48px;right:0;z-index:30;
+  background:var(--paper);border:1px solid var(--ink);border-radius:8px;
+  padding:7px 8px;display:flex;gap:6px;align-items:center;
+  box-shadow:0 6px 20px rgba(43,42,92,.18)
+}
+.slotpick b{
+  font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;
+  color:var(--ink);margin-right:2px;flex:0 0 auto
+}
+.slotpick button{
+  flex:1 1 0;background:var(--panel);border:1px solid var(--line);color:var(--ink);
+  border-radius:6px;padding:6px 0;font-size:12px;font-family:inherit;cursor:pointer
+}
+.slotpick button:active{background:#F7E9EE}
+.slotpick button.x{flex:0 0 auto;padding:6px 9px;color:var(--muted)}
+
 /* live readout of the delay while dragging */
 .grip[data-hint]::after{
   content:attr(data-hint);position:absolute;right:48px;
@@ -367,6 +394,8 @@ const apiPost = payload => {
     case 'replan':   return call('apiReplan', payload.date);
     case 'setDelay': return call('apiSetDelay', payload.date, payload.id, payload.minutes);
     case 'clearDelays': return call('apiClearDelays', payload.date);
+    case 'blockOut':  return call('apiBlockOut', payload.date, payload.beforeId, payload.minutes);
+    case 'unblock':   return call('apiUnblock', payload.date, payload.id);
     default:         return Promise.resolve({ok:false, error:'unknown action'});
   }
 };
@@ -480,6 +509,18 @@ function blockEl(b, editable){
   dur.textContent = b.duration + 'm';
   body.appendChild(dur);
 
+  // tap a blocked slot to give the time back
+  if(b.kind === 'blocked' && editable){
+    body.setAttribute('role','button');
+    body.setAttribute('aria-label','Remove blocked time');
+    body.onclick = async () => {
+      toast('Removing…');
+      const r = await apiPost({action:'unblock', date: b._date, id: b.id});
+      if(r.ok){ absorb(r.data); render(); toast('Time freed'); }
+      else toast('Could not remove');
+    };
+  }
+
   // Whole block is the check target — a 18px checkbox is a poor tap target,
   // and there is room now that each block is at least 44px tall.
   if(b.kind === 'focus'){
@@ -589,6 +630,8 @@ function render(){
   // Gaps are not drawn. They still count in layout() above, so the blocks
   // after a delay sit later on the canvas — the delay shows as empty grid
   // rather than as a block of its own.
+  day.blocks.forEach(b => { b._date = day.date; });   // blocked slots need it to unblock
+
   buildGroups(day.blocks.filter(b => b.kind !== 'gap')).forEach(group => {
     const g = document.createElement('div');
     g.className = 'group';
@@ -614,6 +657,7 @@ function render(){
     line.innerHTML = '<span>' + fmtMin(t) + '</span>';
     rail.appendChild(line);
   }
+  if(editable) attachSlotPicker(rail, day, L);
   content.appendChild(rail);
   renderNowLine(rail, day);
   content.appendChild(renderSummary(day));
@@ -660,6 +704,64 @@ function render(){
 }
 
 // ---------------------------------------------------------------- drag to reorder
+/**
+ * Tap empty grid to reserve that time. The blocked slot is inserted before the
+ * first block starting at or after the tapped time, so everything from there
+ * shifts later — the same sequencing every other block kind uses.
+ *
+ * It therefore lands on that block's boundary rather than the exact minute you
+ * tapped. Storing a real start time per block would be needed for exact
+ * placement, and that would break the "times are always derived" design.
+ */
+function attachSlotPicker(rail, day, L){
+  let pick = null;
+  const close = () => { if(pick){ pick.remove(); pick = null; } };
+
+  rail.addEventListener('click', e => {
+    if(e.target.closest('.group')){ close(); return; }   // tapped a block
+    if(e.target.closest('.slotpick')) return;
+    close();
+
+    const y = e.clientY - rail.getBoundingClientRect().top;
+    const at = L.from + Math.round((y / PX_PER_MIN) / 30) * 30;
+
+    // first block at or after the tapped time; none means end of day
+    let beforeId = '';
+    for(const p of L.placed){
+      if(p.from >= at){ beforeId = p.block.id; break; }
+    }
+
+    pick = document.createElement('div');
+    pick.className = 'slotpick';
+    pick.style.top = Math.max(0, (at - L.from) * PX_PER_MIN) + 'px';
+    pick.innerHTML = '<b>' + fmtMin(at) + '</b>';
+
+    [['30m',30],['1h',60],['2h',120]].forEach(([label,mins]) => {
+      const b = document.createElement('button');
+      b.textContent = label;
+      b.onclick = async ev => {
+        ev.stopPropagation();
+        close();
+        toast('Blocking out ' + label + '…');
+        const r = await apiPost({action:'blockOut', date: day.date,
+          beforeId: beforeId, minutes: mins});
+        if(r.ok){ absorb(r.data); render(); toast('Time blocked out'); }
+        else toast('Could not block out');
+      };
+      pick.appendChild(b);
+    });
+
+    const x = document.createElement('button');
+    x.className = 'x';
+    x.textContent = '✕';
+    x.setAttribute('aria-label','Cancel');
+    x.onclick = ev => { ev.stopPropagation(); close(); };
+    pick.appendChild(x);
+
+    rail.appendChild(pick);
+  });
+}
+
 const SNAP_MIN = 5;   // delays land on 5-minute boundaries
 
 /**
