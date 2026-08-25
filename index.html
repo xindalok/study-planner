@@ -268,8 +268,6 @@ button.ghost.primary{
 }
 .grip{position:relative}
 
-/* The range sits together on the left: start dominant, end trailing it in a
-   lighter weight. Tabular figures keep the starts aligned down the column. */
 .when{
   flex:0 0 auto;display:inline-flex;align-items:baseline;gap:3px;
   font-family:'JetBrains Mono',monospace;
@@ -279,6 +277,31 @@ button.ghost.primary{
 .from{font-size:12.5px;font-weight:600}
 .sep{font-size:10px;opacity:.35}
 .to{font-size:11px;opacity:.5}
+
+/* Study blocks: the two times stack, right-aligned in a fixed column, so the
+   starts form one edge down the evening and the start clearly dominates. */
+.block.focus .when{
+  flex-direction:column;align-items:flex-end;justify-content:center;
+  gap:2px;width:58px;text-align:right
+}
+.block.focus .from{font-size:13.5px;font-weight:600;letter-spacing:-.03em}
+.block.focus .sep{display:none}
+.block.focus .to{font-size:10px;opacity:.45;font-weight:400}
+
+/* Breaks and blocked time are not the point of the evening: one centred grey
+   line rather than a left column competing with the study blocks. */
+.block.break .body,
+.block.blocked .body{justify-content:center;gap:9px}
+.block.break .label,
+.block.blocked .label{flex:0 0 auto;order:1}
+.block.break .when,
+.block.blocked .when{order:2;color:var(--faint)}
+.block.break .from,
+.block.blocked .from{font-weight:400;opacity:.85}
+.block.break .to,
+.block.blocked .to{opacity:.85}
+.block.break .sep,
+.block.blocked .sep{opacity:.55}
 .label{flex:1;min-width:0;font-size:13px;font-weight:500;letter-spacing:-.01em;
   line-height:1.25;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
@@ -456,10 +479,10 @@ button.ghost.warn:active{background:#F7DDDC}
   .bt-ack{width:100%}
   .bt-x{width:100%;height:30px}
   .railcard{margin-top:0;padding:28px 18px 24px}
-  /* fixed column for the range so every subject name starts at the same x —
-     the widest case is '10.40pm – 10.50pm'. Only on wide screens; on a phone
-     that column would cost the name too much width. */
-  .when{min-width:126px}
+  /* study-block names all start at the same x; the stacked column is narrow
+     enough that this costs little even on a phone, but keep it wide-screen
+     only to be safe */
+  .block.focus .when{width:62px}
 }
 
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
