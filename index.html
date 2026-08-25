@@ -183,6 +183,31 @@ h1{
 .block.blocked .from{font-size:10px;font-weight:500}
 .block.blocked .to{font-size:10px;opacity:.55}
 
+/* edit-subject control — same quiet treatment as remove */
+.ed{
+  flex:0 0 auto;width:22px;height:22px;border-radius:6px;padding:0;
+  background:transparent;border:1px solid transparent;color:inherit;
+  display:grid;place-items:center;cursor:pointer;opacity:.3;
+  transition:opacity .12s,background .12s
+}
+.ed svg{width:14px;height:14px;stroke:currentColor;stroke-width:1.8;fill:none;
+  stroke-linejoin:round}
+.ed:hover{opacity:.85;background:rgba(43,42,92,.06)}
+
+/* subject presets inside the sheet */
+.subjects{display:flex;flex-wrap:wrap;gap:7px}
+.subj{
+  flex:1 1 44%;background:var(--panel);border:1px solid var(--hair);
+  color:var(--ink);border-radius:10px;padding:11px 12px;
+  font-family:inherit;font-size:13px;text-align:left;cursor:pointer
+}
+.subj:active{background:#EFEAF0}
+.subj.on{border-color:var(--ink);font-weight:600}
+.subj[data-subject="Vibecode App Dev"]{background:var(--appdev);color:var(--appdev-ink)}
+.subj[data-subject="Fundamentals (JS/React)"]{background:var(--fund);color:var(--fund-ink)}
+.subj[data-subject="Digital Cloud Leader"]{background:var(--cdl);color:var(--cdl-ink)}
+.subj[data-subject="Korean"]{background:var(--korean);color:var(--korean-ink)}
+
 /* remove control — quiet like the grip until you reach for it */
 .rm{
   flex:0 0 auto;width:22px;height:22px;border-radius:6px;padding:0;
@@ -650,6 +675,7 @@ const apiPost = payload => {
     case 'blockOut':  return call('apiBlockOut', payload.date, payload.beforeId, payload.minutes);
     case 'unblock':   return call('apiUnblock', payload.date, payload.id);
     case 'removeBlock': return call('apiRemoveBlock', payload.date, payload.id);
+    case 'setSubject': return call('apiSetSubject', payload.date, payload.id, payload.subject);
     default:         return Promise.resolve({ok:false, error:'unknown action'});
   }
 };
@@ -663,6 +689,10 @@ function blockHeight(b){
 
 const isBreak = k => k === 'short_break' || k === 'long_break';
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+// mirrors PRIMARY_ROTATING + SECONDARY_BY_WEEKDAY in Code.gs; these are the
+// subjects the generator produces, offered as one-tap presets
+const SUBJECTS = ['Vibecode App Dev','Fundamentals (JS/React)',
+                  'Digital Cloud Leader','Korean'];
 
 /**
  * A focus block and the break immediately after it form one group, so a delay
@@ -841,6 +871,19 @@ function blockEl(b, editable){
     body.appendChild(bm);
   }
 
+  // Change what this block is for.
+  if(editable && b.kind === 'focus'){
+    const ed = document.createElement('button');
+    ed.className = 'ed';
+    ed.type = 'button';
+    ed.title = 'Change subject';
+    ed.setAttribute('aria-label', 'Change subject of ' + b.task);
+    ed.innerHTML = '<svg viewBox="0 0 24 24">'
+      + '<path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4z"/></svg>';
+    ed.onclick = e => { e.stopPropagation(); openSubject(b._date, b.id, b.subject); };
+    body.appendChild(ed);
+  }
+
   // Remove this study block. Two taps: the first arms it and relabels, the
   // second commits. Deleting on a single stray tap is too easy, and the Apps
   // Script sandbox is not a place to rely on window.confirm().
@@ -888,6 +931,70 @@ function blockEl(b, editable){
  * Heights are strictly proportional now, so the marker is placed straight from
  * the clock rather than interpolated inside a block — it is exact.
  */
+/**
+ * Change a block's subject. The four generated subjects are offered as one-tap
+ * presets; the text field takes anything else. Colour follows the subject, so
+ * a custom name simply renders in the neutral block style.
+ */
+function openSubject(date, id, current){
+  const back = document.createElement('div');
+  back.className = 'sheet-back';
+
+  const card = document.createElement('div');
+  card.className = 'sheet';
+  card.innerHTML = '<h3>Change subject</h3>';
+
+  const apply = async subj => {
+    const v = String(subj || '').trim();
+    if(!v){ toast('Subject cannot be empty'); return; }
+    back.remove();
+    toast('Changing subject…');
+    const r = await apiPost({action:'setSubject', date:date, id:id, subject:v});
+    if(r.ok){ absorb(r.data); render(); toast('Subject changed'); }
+    else toast(r.error || 'Could not change subject');
+  };
+
+  const list = document.createElement('div');
+  list.className = 'subjects';
+  SUBJECTS.forEach(name => {
+    const b = document.createElement('button');
+    b.className = 'subj' + (name === current ? ' on' : '');
+    b.type = 'button';
+    b.dataset.subject = name;
+    b.textContent = name;
+    b.onclick = () => apply(name);
+    list.appendChild(b);
+  });
+  card.appendChild(list);
+
+  const other = document.createElement('input');
+  other.type = 'text';
+  other.placeholder = 'Something else…';
+  other.value = SUBJECTS.indexOf(current) === -1 ? current : '';
+  card.appendChild(other);
+
+  const row = document.createElement('div');
+  row.className = 'sheet-row';
+
+  const save = document.createElement('button');
+  save.className = 'ghost primary';
+  save.textContent = 'Use this';
+  save.onclick = () => apply(other.value);
+  row.appendChild(save);
+
+  const cancel = document.createElement('button');
+  cancel.className = 'ghost';
+  cancel.textContent = 'Cancel';
+  cancel.onclick = () => back.remove();
+  row.appendChild(cancel);
+
+  card.appendChild(row);
+  back.appendChild(card);
+  back.onclick = e => { if(e.target === back) back.remove(); };
+  document.body.appendChild(back);
+  other.focus();
+}
+
 /**
  * Bookmark editor. Opening the saved link uses a real anchor with target
  * _blank rather than window.open, which the Apps Script sandbox blocks.
