@@ -278,11 +278,11 @@ button.ghost.primary{
 .sep{font-size:10px;opacity:.35}
 .to{font-size:11px;opacity:.5}
 
-/* Study blocks: the two times stack, right-aligned in a fixed column, so the
+/* Study blocks: the two times stack, left-aligned in a fixed column, so the
    starts form one edge down the evening and the start clearly dominates. */
 .block.focus .when{
-  flex-direction:column;align-items:flex-end;justify-content:center;
-  gap:2px;width:58px;text-align:right
+  flex-direction:column;align-items:flex-start;justify-content:center;
+  gap:2px;width:58px;text-align:left
 }
 .block.focus .from{font-size:13.5px;font-weight:600;letter-spacing:-.03em}
 .block.focus .sep{display:none}
@@ -304,6 +304,10 @@ button.ghost.primary{
 .block.blocked .sep{opacity:.55}
 .label{flex:1;min-width:0;font-size:13px;font-weight:500;letter-spacing:-.01em;
   line-height:1.25;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* The subject carries the block. Centring works out close to the block's true
+   centre because the time column on the left (~98px with the tick) and the
+   action cluster on the right (~100px) are near enough the same width. */
+.block.focus .label{font-size:18px;font-weight:500;text-align:center;letter-spacing:-.02em}
 
 .tick{
   flex:0 0 auto;width:18px;height:18px;border-radius:5px;
