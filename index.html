@@ -404,6 +404,10 @@ button.ghost{
   font-family:inherit
 }
 button.ghost:active{background:var(--panel)}
+/* armed state for a destructive action */
+button.ghost.warn{
+  background:#FBEBEA;border-color:rgba(226,75,74,.45);color:#A33B3A;font-weight:500
+}
 .msg{
   padding:26px 16px;text-align:center;color:var(--muted);font-size:14px;
   border:1px dashed var(--line);border-radius:var(--radius);margin-top:18px
@@ -1208,12 +1212,29 @@ function render(){
     const rb = document.createElement('button');
     rb.className = 'ghost';
     rb.textContent = 'Reset this day';
+    // Two taps to arm, like the block remove. window.confirm() is blocked in
+    // the Apps Script sandbox — it returns falsy, so this button silently did
+    // nothing at all.
+    let armed = null;
     rb.onclick = async () => {
-      if(!confirm('Rebuild this day from the template? Check-offs and order are cleared.')) return;
+      if(!armed){
+        armed = setTimeout(() => {
+          armed = null;
+          rb.classList.remove('warn');
+          rb.textContent = 'Reset this day';
+        }, 3500);
+        rb.classList.add('warn');
+        rb.textContent = 'Tap again to reset';
+        toast('This clears check-offs, edits and order');
+        return;
+      }
+      clearTimeout(armed); armed = null;
+      rb.classList.remove('warn');
+      rb.textContent = 'Reset this day';
       toast('Rebuilding…');
       const r = await apiPost({action:'replan', date:day.date});
       if(r.ok){ absorb(r.data); render(); toast('Day rebuilt'); }
-      else toast('Could not rebuild');
+      else toast(r.error || 'Could not rebuild');
     };
     actions.appendChild(rb);
   }
