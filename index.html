@@ -171,7 +171,7 @@ h1{
 .block.long_break .body{background:var(--rest-deep)}
 .block.break .label{font-size:11px;font-weight:500;line-height:1}
 .block.break .from{font-size:10px;font-weight:500}
-.block.break .to{font-size:10px;opacity:.6}
+.block.break .to{font-size:10px;opacity:.55}
 
 /* blocked-out time: not study, not a break — hatched so it reads as unavailable */
 .block.blocked .body{
@@ -181,11 +181,11 @@ h1{
 }
 .block.blocked .label{font-size:11px;font-weight:500;line-height:1}
 .block.blocked .from{font-size:10px;font-weight:500}
-.block.blocked .to{font-size:10px;opacity:.6}
+.block.blocked .to{font-size:10px;opacity:.55}
 
 /* remove control — quiet like the grip until you reach for it */
 .rm{
-  flex:0 0 auto;width:24px;height:24px;border-radius:6px;padding:0;
+  flex:0 0 auto;width:22px;height:22px;border-radius:6px;padding:0;
   background:transparent;border:1px solid transparent;color:inherit;
   display:grid;place-items:center;cursor:pointer;opacity:.3;
   transition:opacity .12s,background .12s,color .12s
@@ -199,7 +199,7 @@ h1{
 
 /* bookmark: faint until a link is saved, then solid */
 .bm{
-  flex:0 0 auto;width:26px;height:26px;border-radius:6px;padding:0;
+  flex:0 0 auto;width:22px;height:22px;border-radius:6px;padding:0;
   background:transparent;border:1px solid transparent;color:inherit;
   display:grid;place-items:center;cursor:pointer;opacity:.4
 }
@@ -268,15 +268,17 @@ button.ghost.primary{
 }
 .grip{position:relative}
 
-/* Start at the left edge, end at the right — the block's width reads as its
-   span. Tabular figures so the two columns line up down the whole evening. */
-.from,.to{
-  flex:0 0 auto;font-family:'JetBrains Mono',monospace;
+/* The range sits together on the left: start dominant, end trailing it in a
+   lighter weight. Tabular figures keep the starts aligned down the column. */
+.when{
+  flex:0 0 auto;display:inline-flex;align-items:baseline;gap:3px;
+  font-family:'JetBrains Mono',monospace;
   font-variant-numeric:tabular-nums;font-feature-settings:'tnum' 1;
   letter-spacing:-.02em;line-height:1;white-space:nowrap
 }
 .from{font-size:12.5px;font-weight:600}
-.to{font-size:11px;opacity:.55}
+.sep{font-size:10px;opacity:.35}
+.to{font-size:11px;opacity:.5}
 .label{flex:1;min-width:0;font-size:13px;font-weight:500;letter-spacing:-.01em;
   line-height:1.25;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
@@ -296,9 +298,9 @@ button.ghost.primary{
    a grip, and those are 45px tall, so the handle is a full 44x45. touch-action
    is none here only — the block keeps pan-y so the page still scrolls. */
 .grip{
-  flex:0 0 auto;width:40px;align-self:stretch;cursor:grab;
+  flex:0 0 auto;width:34px;align-self:stretch;cursor:grab;
   display:grid;place-items:center;touch-action:none;
-  margin:0 -10px 0 0;border-radius:0 7px 7px 0;
+  margin:0 -10px 0 4px;border-radius:0 7px 7px 0;
   background:transparent;opacity:.35;transition:opacity .12s,background .12s
 }
 .grip:hover{opacity:.75;background:rgba(43,42,92,.05)}
@@ -454,6 +456,10 @@ button.ghost.warn:active{background:#F7DDDC}
   .bt-ack{width:100%}
   .bt-x{width:100%;height:30px}
   .railcard{margin-top:0;padding:28px 18px 24px}
+  /* fixed column for the range so every subject name starts at the same x —
+     the widest case is '10.40pm – 10.50pm'. Only on wide screens; on a phone
+     that column would cost the name too much width. */
+  .when{min-width:126px}
 }
 
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
@@ -725,23 +731,34 @@ function blockEl(b, editable){
     body.appendChild(tick);
   }
 
-  // Start at the left edge, end at the right, name between: the block's width
-  // reads as its span. Start leads and the end recedes to reference. A single
-  // row, so a 45px focus block and a 15px break lay out identically.
+  // Start and end read as one range on the left. They used to sit at opposite
+  // edges, which put the end time next to the bookmark, remove and grip — four
+  // unrelated things competing in the same corner. The right side is now
+  // actions only.
+  const when = document.createElement('div');
+  when.className = 'when';
+
   const from = document.createElement('div');
   from.className = 'from';
   from.textContent = fmt12(b.start);
-  body.appendChild(from);
+  when.appendChild(from);
+
+  const sep = document.createElement('span');
+  sep.className = 'sep';
+  sep.textContent = '–';
+  when.appendChild(sep);
+
+  const to = document.createElement('div');
+  to.className = 'to';
+  to.textContent = fmt12(b.end);
+  when.appendChild(to);
+
+  body.appendChild(when);
 
   const label = document.createElement('div');
   label.className = 'label';
   label.textContent = b.task;
   body.appendChild(label);
-
-  const to = document.createElement('div');
-  to.className = 'to';
-  to.textContent = fmt12(b.end);
-  body.appendChild(to);
 
   // tap a blocked slot to give the time back
   if(b.kind === 'blocked' && editable){
