@@ -368,8 +368,6 @@ button.ghost.primary{
    on transform, and transform is rewritten on every pointermove — so each
    move started a fresh animation and the blocks lagged behind the finger. */
 .rail.reordering .group{transition:none}
-/* dimmed while the save is in flight, with the dragged position held */
-.rail.saving{opacity:.6;pointer-events:none;transition:opacity .12s}
 
 /* now marker */
 .nowline{
@@ -678,6 +676,42 @@ const apiPost = payload => {
   }
 };
 
+/**
+ * Apply a change locally, paint it immediately, then send it. An Apps Script
+ * round trip is ~1-2s — waiting for it before showing anything made every
+ * edit feel broken. Clock times are computed from startTime plus durations, so
+ * the optimistic render is already correct, not an approximation.
+ *
+ * On failure the snapshot is restored, so a rejected write cannot leave the
+ * screen showing something the sheet does not contain.
+ */
+async function mutate(payload, applyLocally){
+  const snapshot = JSON.stringify(state.days);
+  try {
+    applyLocally();
+    render();
+  } catch (err) {
+    state.days = JSON.parse(snapshot);
+    render();
+    toast('Could not apply that');
+    return;
+  }
+  const r = await apiPost(payload);
+  if(r.ok){
+    absorb(r.data);
+    render();                     // authoritative; normally identical
+  } else {
+    state.days = JSON.parse(snapshot);
+    render();
+    toast(r.error || 'Could not save');
+  }
+}
+
+const blockIn = (date, id) => {
+  const d = dayById(date);
+  return d ? d.blocks.find(b => b.id === id) : null;
+};
+
 // ---------------------------------------------------------------- render
 function dayById(id){ return state.days.find(d => d.date === id); }
 
@@ -760,14 +794,20 @@ function renderStartBar(day){
   input.value = day.startTime;
   input.onchange = async () => {
     const v = input.value;
-    toast('Saving start time…');
-    const r = await apiPost({action:'setStart', field: field, value: v});
-    if(r.ok){ absorb(r.data); render(); toast('Day starts at ' + v); }
-    else toast('Could not save');
+    await mutate({action:'setStart', field: field, value: v}, () => {
+      state.settings[field] = v;
+      // every day of this type shifts, not just the one on screen
+      state.days.forEach(d => {
+        const f = d.dayType === 'saturday' ? 'saturdayStart'
+          : d.dayType === 'sunday' ? 'sundayStart' : 'weekdayStart';
+        if(f === field) d.startTime = v;
+      });
+    });
+    toast('Day starts at ' + fmt12(v));
   };
 }
 
-function blockEl(b, editable){
+function blockEl(b, editable, at){
   const el = document.createElement('div');
   // also carry the exact kind, so long breaks can read differently from short
   el.className = 'block ' + (b.kind === 'focus' ? 'focus' : 'break')
@@ -795,7 +835,7 @@ function blockEl(b, editable){
 
   const from = document.createElement('div');
   from.className = 'from';
-  from.textContent = fmt12(b.start);
+  from.textContent = fmt12(at ? at.from : b.start);
   when.appendChild(from);
 
   const sep = document.createElement('span');
@@ -805,7 +845,7 @@ function blockEl(b, editable){
 
   const to = document.createElement('div');
   to.className = 'to';
-  to.textContent = fmt12(b.end);
+  to.textContent = fmt12(at ? at.to : b.end);
   when.appendChild(to);
 
   body.appendChild(when);
@@ -820,10 +860,11 @@ function blockEl(b, editable){
     body.setAttribute('role','button');
     body.setAttribute('aria-label','Remove blocked time');
     body.onclick = async () => {
-      toast('Removing…');
-      const r = await apiPost({action:'unblock', date: b._date, id: b.id});
-      if(r.ok){ absorb(r.data); render(); toast('Time freed'); }
-      else toast('Could not remove');
+      await mutate({action:'unblock', date: b._date, id: b.id}, () => {
+        const d = dayById(b._date);
+        d.blocks = d.blocks.filter(x => x.id !== b.id);
+      });
+      toast('Time freed');
     };
   }
 
@@ -903,10 +944,18 @@ function blockEl(b, editable){
         return;
       }
       clearTimeout(armed); armed = null;
-      toast('Removing…');
-      const r = await apiPost({action:'removeBlock', date: b._date, id: b.id});
-      if(r.ok){ absorb(r.data); render(); toast('Block removed'); }
-      else { rm.classList.remove('armed'); toast('Could not remove'); }
+      await mutate({action:'removeBlock', date: b._date, id: b.id}, () => {
+        // mirror the server rule: the trailing break goes too, or the
+        // preceding one when this is the last block of the day
+        const d = dayById(b._date);
+        const i = d.blocks.findIndex(x => x.id === b.id);
+        const kill = [b.id];
+        const next = d.blocks[i + 1], prev = d.blocks[i - 1];
+        if(next && isBreak(next.kind)) kill.push(next.id);
+        else if(!next && prev && isBreak(prev.kind)) kill.push(prev.id);
+        d.blocks = d.blocks.filter(x => kill.indexOf(x.id) === -1);
+      });
+      toast('Block removed');
     };
     body.appendChild(rm);
   }
@@ -946,10 +995,14 @@ function openSubject(date, id, current){
     const v = String(subj || '').trim();
     if(!v){ toast('Subject cannot be empty'); return; }
     back.remove();
-    toast('Changing subject…');
-    const r = await apiPost({action:'setSubject', date:date, id:id, subject:v});
-    if(r.ok){ absorb(r.data); render(); toast('Subject changed'); }
-    else toast(r.error || 'Could not change subject');
+    await mutate({action:'setSubject', date:date, id:id, subject:v}, () => {
+      const b = blockIn(date, id);
+      if(!b) throw new Error('block not found');
+      const m = String(b.task).match(/(\d+)\s*$/);
+      b.subject = v;
+      b.task = v + ' — focus ' + (m ? m[1] : '1');
+    });
+    toast('Subject changed');
   };
 
   const list = document.createElement('div');
@@ -1096,7 +1149,7 @@ function summaryHTML(day){
   const done = focus.filter(b=>b.done).length;
   return '<div><b>' + done + '/' + focus.length + '</b> done</div>' +
     '<div><b>' + (done*30/60).toFixed(1) + 'h</b> logged</div>' +
-    '<div>ends <b>' + fmt12(day.blocks[day.blocks.length-1].end) + '</b></div>' +
+    '<div>ends <b>' + fmt12(layout(day).placed.slice(-1)[0].to) + '</b></div>' +
     (TRIGGER_OK ? '' : '<div class="warn">daily trigger not installed</div>');
 }
 
@@ -1176,7 +1229,7 @@ function render(){
     const g = document.createElement('div');
     g.className = 'group';
     g.style.top = ((at[group[0].id].from - L.from) * PX_PER_MIN) + 'px';
-    group.forEach(b => g.appendChild(blockEl(b, editable)));
+    group.forEach(b => g.appendChild(blockEl(b, editable, at[b.id])));
 
     // dragging the grip delays this group and everything below it
     const grip = g.querySelector('.grip');
@@ -1287,11 +1340,15 @@ function attachSlotPicker(rail, day, L){
       b.onclick = async ev => {
         ev.stopPropagation();
         close();
-        toast('Blocking out ' + label + '…');
-        const r = await apiPost({action:'blockOut', date: day.date,
-          beforeId: beforeId, minutes: mins});
-        if(r.ok){ absorb(r.data); render(); toast('Time blocked out'); }
-        else toast('Could not block out');
+        await mutate({action:'blockOut', date: day.date,
+                      beforeId: beforeId, minutes: mins}, () => {
+          const d = dayById(day.date);
+          const blk = { id:'tmp-blocked-' + Date.now(), kind:'blocked', subject:'',
+                        task:'Blocked', duration:mins, done:false, _date:d.date };
+          const i = beforeId ? d.blocks.findIndex(x => x.id === beforeId) : -1;
+          if(i < 0) d.blocks.push(blk); else d.blocks.splice(i, 0, blk);
+        });
+        toast('Time blocked out');
       };
       pick.appendChild(b);
     });
@@ -1359,18 +1416,19 @@ function attachDelay(grip, el, date, blockId, currentGap, startsAt){
     // Hold the dragged position while the save is in flight. Clearing it here
     // made the whole schedule snap back to its old times for the length of the
     // round trip and then jump forward again once the re-render landed.
-    rail.classList.add('saving');
-    const r = await apiPost({action:'setDelay', date: date, id: blockId, minutes: mins});
-    if(r.ok){
-      absorb(r.data);
-      render();                       // rebuilds the rail, so transforms go with it
-      toast(mins ? 'Pushed back ' + mins + 'm' : 'Delay cleared');
-    } else {
-      rail.classList.remove('saving');
-      reset();
-      toast('Could not save');
-      load();
-    }
+    await mutate({action:'setDelay', date: date, id: blockId, minutes: mins}, () => {
+      const d = dayById(date);
+      const i = d.blocks.findIndex(x => x.id === blockId);
+      const prev = d.blocks[i - 1];
+      if(prev && prev.kind === 'gap'){
+        if(mins > 0) prev.duration = mins;
+        else d.blocks.splice(i - 1, 1);
+      } else if(mins > 0){
+        d.blocks.splice(i, 0, { id:'tmp-gap-' + Date.now(), kind:'gap', subject:'',
+                                task:'Delay', duration:mins, done:false, _date:date });
+      }
+    });
+    toast(mins ? 'Pushed back ' + mins + 'm' : 'Delay cleared');
   };
 
   grip.addEventListener('pointerdown', e => {
