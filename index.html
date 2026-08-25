@@ -183,6 +183,20 @@ h1{
 .block.blocked .from{font-size:10px;font-weight:500}
 .block.blocked .to{font-size:10px;opacity:.6}
 
+/* remove control — quiet like the grip until you reach for it */
+.rm{
+  flex:0 0 auto;width:24px;height:24px;border-radius:6px;padding:0;
+  background:transparent;border:1px solid transparent;color:inherit;
+  display:grid;place-items:center;cursor:pointer;opacity:.3;
+  transition:opacity .12s,background .12s,color .12s
+}
+.rm svg{width:13px;height:13px;stroke:currentColor;stroke-width:2;fill:none;
+  stroke-linecap:round}
+.rm:hover{opacity:.8;background:rgba(43,42,92,.06)}
+.rm.armed{
+  opacity:1;background:#FBEBEA;border-color:rgba(226,75,74,.45);color:#A33B3A
+}
+
 /* bookmark: faint until a link is saved, then solid */
 .bm{
   flex:0 0 auto;width:26px;height:26px;border-radius:6px;padding:0;
@@ -602,6 +616,7 @@ const apiPost = payload => {
     case 'bookmark':  return call('apiSetBookmark', payload.subject, payload.url, payload.note);
     case 'blockOut':  return call('apiBlockOut', payload.date, payload.beforeId, payload.minutes);
     case 'unblock':   return call('apiUnblock', payload.date, payload.id);
+    case 'removeBlock': return call('apiRemoveBlock', payload.date, payload.id);
     default:         return Promise.resolve({ok:false, error:'unknown action'});
   }
 };
@@ -780,6 +795,35 @@ function blockEl(b, editable){
     bm.innerHTML = '<svg viewBox="0 0 24 24"><path d="M6 3h12v18l-6-4.5L6 21z"/></svg>';
     bm.onclick = e => { e.stopPropagation(); openBookmark(b.subject, b._date); };
     body.appendChild(bm);
+  }
+
+  // Remove this study block. Two taps: the first arms it and relabels, the
+  // second commits. Deleting on a single stray tap is too easy, and the Apps
+  // Script sandbox is not a place to rely on window.confirm().
+  if(editable && b.kind === 'focus'){
+    const rm = document.createElement('button');
+    rm.className = 'rm';
+    rm.type = 'button';
+    rm.title = 'Remove this block';
+    rm.setAttribute('aria-label', 'Remove ' + b.task);
+    rm.innerHTML = '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+    let armed = null;
+    rm.onclick = async e => {
+      e.stopPropagation();
+      if(!armed){
+        armed = setTimeout(() => { armed = null; rm.classList.remove('armed'); }, 3000);
+        rm.classList.add('armed');
+        rm.setAttribute('aria-label', 'Tap again to remove ' + b.task);
+        toast('Tap again to remove');
+        return;
+      }
+      clearTimeout(armed); armed = null;
+      toast('Removing…');
+      const r = await apiPost({action:'removeBlock', date: b._date, id: b.id});
+      if(r.ok){ absorb(r.data); render(); toast('Block removed'); }
+      else { rm.classList.remove('armed'); toast('Could not remove'); }
+    };
+    body.appendChild(rm);
   }
 
   // Only focus blocks get a grip. Breaks are carried by the block above them,
