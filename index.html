@@ -89,22 +89,6 @@ h1{
 .dow-6{background:#CFEAF7;color:#0C4453}
 .dow-0{background:#A9DCE8;color:#0C4453}
 
-/* ---------- start time ---------- */
-.startbar{
-  display:flex;align-items:center;gap:10px;
-  background:var(--paper);border:1px solid var(--hair);
-  border-radius:12px;padding:11px 13px;margin:12px 0 2px
-}
-.startbar[hidden]{display:none}
-.startbar label{font-size:12px;color:var(--muted);flex:1}
-.startbar input{
-  background:var(--canvas);border:1px solid var(--hair);color:var(--ink);
-  font-family:'JetBrains Mono',monospace;font-size:14px;
-  /* wide enough for a 12-hour locale's AM/PM segment, which was being
-     clipped — 07:30 with no meridiem is ambiguous */
-  border-radius:6px;padding:5px 8px;width:140px
-}
-
 /* ---------- the rail ---------- */
 /* The rail is a fixed time canvas: every half hour of the window is drawn,
    whether or not anything is scheduled in it. Blocks are positioned by clock
@@ -261,6 +245,37 @@ h1{
 .addsubj{width:100%;margin-top:2px}
 .subjnote{margin:12px 4px 0;font-size:12px;color:var(--muted);line-height:1.5}
 button.ghost.primary{background:var(--ink);border-color:var(--ink);color:#fff;font-weight:500}
+
+/* ---------- availability page ---------- */
+.arow .srow-top{justify-content:space-between}
+.aday{font-size:16px;font-weight:600;letter-spacing:-.01em}
+.asum{
+  font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--faint);
+  letter-spacing:-.01em
+}
+.wins{display:flex;flex-direction:column;gap:7px;margin-top:11px}
+.win{display:flex;align-items:center;gap:7px}
+.win input{
+  flex:0 1 132px;min-width:0;background:var(--canvas);border:1px solid var(--hair);
+  color:var(--ink);border-radius:8px;padding:7px 9px;
+  font-family:'JetBrains Mono',monospace;font-size:13px
+}
+.win input:focus{outline:2px solid var(--ink);outline-offset:1px}
+.wdash{color:var(--faint);font-size:12px}
+.addwin{
+  align-self:flex-start;background:transparent;border:1px dashed var(--hair);
+  color:var(--muted);border-radius:8px;padding:7px 12px;
+  font-family:inherit;font-size:12.5px;cursor:pointer
+}
+.addwin:hover{border-color:var(--muted);color:var(--ink)}
+
+/* time that is not available on this day */
+.offband{
+  position:absolute;left:58px;right:0;z-index:0;pointer-events:none;
+  background:repeating-linear-gradient(135deg,
+    rgba(43,42,92,.035) 0 6px, transparent 6px 12px);
+  border-top:1px solid var(--line-soft);border-bottom:1px solid var(--line-soft)
+}
 
 /* subject presets inside the sheet */
 .subjects{display:flex;flex-wrap:wrap;gap:7px}
@@ -557,9 +572,6 @@ button.ghost.warn{
   .dw{flex:0 0 auto;font-size:13px}
   .dgrp{margin-left:auto}
   .dd{font-size:12.5px}
-  .startbar{flex-direction:column;align-items:stretch;gap:6px;margin:12px 0 0}
-  .startbar label{flex:0 0 auto}
-  .startbar input{width:100%}
   .breaktimer{
     position:static;left:auto;right:auto;bottom:auto;
     margin-top:12px;flex-direction:column;align-items:stretch;gap:9px;
@@ -590,10 +602,6 @@ button.ghost.warn{
 
       <div class="days" id="days" role="tablist"></div>
 
-      <div class="startbar" id="startbar" hidden>
-        <label for="startInput" id="startLabel">Start time</label>
-        <input type="time" id="startInput">
-      </div>
 
       <div class="breaktimer" id="breaktimer" hidden>
         <div class="bt-label">
@@ -646,25 +654,18 @@ const BELL = '<path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/>'
            + '<path d="M13.7 21a2 2 0 0 1-3.4 0"/>';
 const BELL_OFF = BELL + '<path d="M3 3l18 18"/>';
 
-// The visible window per day type. Times after midnight are written as they
-// read on a clock; toMin() rolls them past 24h so the canvas stays continuous.
-const CANVAS = {
-  weekday:  { from:'18:30', to:'01:00' },
-  saturday: { from:'10:00', to:'00:30' },
-  sunday:   { from:'10:00', to:'00:30' }
-};
-
-const toMin = hhmm => {
-  const [h,m] = hhmm.split(':').map(Number);
-  return h*60 + m;
-};
 /**
- * Display format: 9.30pm, and 9pm on the hour. Takes either minutes-from-
- * midnight (which may run past 1440 for after-midnight blocks) or an 'HH:mm'
- * string as the server sends it. Storage stays 24-hour — this is display only.
+ * Display format: 9.30pm, and 9pm on the hour. Takes minutes from midnight
+ * (which may run past 1440 for after-midnight blocks) or an 'HH:mm' string.
+ * Storage stays 24-hour — this is display only.
  */
+function toMinC(v){
+  const p = String(v || '').split(':');
+  return (parseInt(p[0],10)||0)*60 + (parseInt(p[1],10)||0);
+}
+
 function fmt12(t){
-  const raw = (typeof t === 'number') ? t : toMin(t);
+  const raw = (typeof t === 'number') ? t : toMinC(t);
   const m = ((raw % 1440) + 1440) % 1440;
   const mins = m % 60;
   let h = Math.floor(m / 60) % 12;
@@ -674,31 +675,33 @@ function fmt12(t){
 }
 
 /**
- * Absolute minute positions for a day, measured on a continuous line that
- * runs past midnight rather than wrapping. The server sends 'HH:mm' strings
- * that have already wrapped (23:40 then 00:10), so positions are recomputed
- * here from the day's start plus cumulative durations instead of parsed back.
+ * Lay the day out inside its availability windows, mirroring placeInWindows in
+ * Code.gs exactly — a block never splits across a gap, and anything that
+ * outruns the last window keeps going rather than disappearing.
  */
 function layout(day){
-  const c = CANVAS[day.dayType] || CANVAS.weekday;
-  let from = toMin(c.from);
-  let to = toMin(c.to);
-  if(to <= from) to += 1440;               // window crosses midnight
+  const wins = (day.windows && day.windows.length)
+    ? day.windows.slice().sort((a,b) => a.from - b.from)
+    : [{ from: 20*60+30, to: 26*60 }];
 
-  let cursor = toMin(day.startTime);
-  if(cursor < from) cursor += 1440;        // shouldn't happen, but stay ordered
+  let wi = 0, cursor = wins[0].from;
   const placed = day.blocks.map(b => {
+    while(wi < wins.length - 1 && cursor + b.duration > wins[wi].to){
+      wi++;
+      cursor = Math.max(cursor, wins[wi].from);
+    }
+    if(cursor < wins[wi].from) cursor = wins[wi].from;
     const at = cursor;
     cursor += b.duration;
     return { block:b, from:at, to:cursor };
   });
 
-  // never clip: if a delay pushes the evening past the window, grow it
-  const end = placed.length ? placed[placed.length-1].to : to;
-  return { from:from, to:Math.max(to, Math.ceil(end/30)*30), placed:placed };
+  const from = wins[0].from;
+  const lastEnd = placed.length ? placed[placed.length-1].to : wins[wins.length-1].to;
+  const to = Math.max(wins[wins.length-1].to, Math.ceil(lastEnd/30)*30);
+  return { from:from, to:to, placed:placed, windows:wins };
 }
 
-// ---------------------------------------------------------------- state
 let state = { days: [], today: null, settings: {}, bookmarks: {}, subjects: [], selected: null, view: 'plan' };
 
 const $ = id => document.getElementById(id);
@@ -732,7 +735,6 @@ const apiPost = payload => {
   switch(payload.action){
     case 'setDone':  return call('apiSetDone', payload.id, payload.done);
     case 'reorder':  return call('apiReorder', payload.date, payload.orderedIds);
-    case 'setStart': return call('apiSetStart', payload.field, payload.value);
     case 'replan':   return call('apiReplan', payload.date);
     case 'setDelay': return call('apiSetDelay', payload.date, payload.id, payload.minutes);
     case 'bookmark':  return call('apiSetBookmark', payload.subject, payload.url, payload.note);
@@ -741,6 +743,7 @@ const apiPost = payload => {
     case 'removeBlock': return call('apiRemoveBlock', payload.date, payload.id);
     case 'setSubject': return call('apiSetSubject', payload.date, payload.id, payload.subject);
     case 'saveSubjects': return call('apiSaveSubjects', payload.list);
+    case 'saveAvailability': return call('apiSaveAvailability', payload.list);
     default:         return Promise.resolve({ok:false, error:'unknown action'});
   }
 };
@@ -783,6 +786,15 @@ const blockIn = (date, id) => {
 
 // ---------------------------------------------------------------- render
 function dayById(id){ return state.days.find(d => d.date === id); }
+
+/** A hatched band over time that is not available on this day. */
+function offBand(L, from, to){
+  const d = document.createElement('div');
+  d.className = 'offband';
+  d.style.top = ((from - L.from) * PX_PER_MIN) + 'px';
+  d.style.height = ((to - from) * PX_PER_MIN) + 'px';
+  return d;
+}
 
 function blockHeight(b){
   return b.duration * PX_PER_MIN;
@@ -883,31 +895,6 @@ function renderHeader(day){
   const subs = [...new Set(focus.map(b => b.subject))];
   const mins = focus.reduce((a,b)=>a+b.duration,0);
   $('subtitle').textContent = subs.join(' + ') + ' · ' + (mins/60) + 'h of focus';
-}
-
-function renderStartBar(day){
-  const bar = $('startbar');
-  const input = $('startInput');
-  const field = day.dayType === 'saturday' ? 'saturdayStart'
-    : day.dayType === 'sunday' ? 'sundayStart' : 'weekdayStart';
-  bar.hidden = false;
-  $('startLabel').textContent =
-    field === 'weekdayStart' ? 'Weekdays start at'
-    : field === 'saturdayStart' ? 'Saturdays start at' : 'Sundays start at';
-  input.value = day.startTime;
-  input.onchange = async () => {
-    const v = input.value;
-    await mutate({action:'setStart', field: field, value: v}, () => {
-      state.settings[field] = v;
-      // every day of this type shifts, not just the one on screen
-      state.days.forEach(d => {
-        const f = d.dayType === 'saturday' ? 'saturdayStart'
-          : d.dayType === 'sunday' ? 'sundayStart' : 'weekdayStart';
-        if(f === field) d.startTime = v;
-      });
-    });
-    toast('Day starts at ' + fmt12(v));
-  };
 }
 
 function blockEl(b, editable, at){
@@ -1306,6 +1293,7 @@ function muteButton(){
 
 function render(){
   if(state.view === 'subjects'){ renderSubjects(); return; }
+  if(state.view === 'availability'){ renderAvailability(); return; }
   const day = dayById(state.selected) || dayById(state.today) || state.days[0];
   if(!day){
     content.innerHTML = '<div class="msg">No schedule yet. Run firstTimeSetup in Apps Script, then refresh.</div>';
@@ -1314,7 +1302,6 @@ function render(){
   state.selected = day.date;
   renderTabs();
   renderHeader(day);
-  renderStartBar(day);
 
   content.innerHTML = '';
   const rail = document.createElement('div');
@@ -1350,6 +1337,16 @@ function render(){
     }
     rail.appendChild(g);
   });
+
+  // time outside every availability window, so the grid shows what is simply
+  // not yours rather than looking like empty capacity
+  for(let i = 0; i < L.windows.length; i++){
+    const gapFrom = i === 0 ? L.from : L.windows[i-1].to;
+    const gapTo = L.windows[i].from;
+    if(gapTo > gapFrom) rail.appendChild(offBand(L, gapFrom, gapTo));
+  }
+  const lastWin = L.windows[L.windows.length-1];
+  if(L.to > lastWin.to) rail.appendChild(offBand(L, lastWin.to, L.to));
 
   // drawn last so they sit above the blocks — every half hour of the window,
   // scheduled or not
@@ -1413,8 +1410,165 @@ function render(){
   subj.onclick = openSubjects;
   actions.appendChild(subj);
 
+  const av = document.createElement('button');
+  av.className = 'ghost';
+  av.textContent = 'Availability';
+  av.onclick = openAvailability;
+  actions.appendChild(av);
+
   actions.appendChild(muteButton());   // right edge of the same row
   content.appendChild(actions);
+}
+
+// ---------------------------------------------------------------- availability page
+/**
+ * When you are free, per weekday. Up to three windows a day; a day with none
+ * is simply not planned. Edits are local until Save, like the subjects page.
+ */
+let avail = null;
+
+function openAvailability(){
+  const src = state.availability || [];
+  avail = [0,1,2,3,4,5,6].map(d => (src[d] || []).map(w => ({
+    from: fmt24(w.from), to: fmt24(w.to)
+  })));
+  state.view = 'availability';
+  render();
+}
+
+/** minutes -> 'HH:mm', wrapping a past-midnight end back to clock time */
+function fmt24(mins){
+  const m = ((mins % 1440) + 1440) % 1440;
+  return ('0' + Math.floor(m/60)).slice(-2) + ':' + ('0' + (m%60)).slice(-2);
+}
+
+function renderAvailability(){
+  content.innerHTML = '';
+  $('days').innerHTML = '';
+  $('kicker').textContent = 'Settings';
+  $('title').textContent = 'Availability';
+  $('subtitle').textContent = 'When you are free each day. Blocks fill the first '
+    + 'window, then carry on in the next. An end before the start means past midnight.';
+
+  const card = document.createElement('div');
+  card.className = 'railcard subjcard';
+
+  DOW_FULL.forEach((label, d) => {
+    const row = document.createElement('div');
+    row.className = 'srow arow';
+
+    const top = document.createElement('div');
+    top.className = 'srow-top';
+    const name = document.createElement('span');
+    name.className = 'aday';
+    name.textContent = label;
+    top.appendChild(name);
+
+    const sum = document.createElement('span');
+    sum.className = 'asum';
+    const paintSum = () => {
+      const mins = avail[d].reduce((a, w) => {
+        let f = toMinC(w.from), t = toMinC(w.to);
+        if(t <= f) t += 1440;
+        return a + (t - f);
+      }, 0);
+      sum.textContent = avail[d].length
+        ? (mins % 60 ? (mins/60).toFixed(1) : (mins/60)) + 'h free'
+        : 'not planned';
+    };
+    paintSum();
+    top.appendChild(sum);
+    row.appendChild(top);
+
+    const wins = document.createElement('div');
+    wins.className = 'wins';
+
+    const drawWindows = () => {
+      wins.innerHTML = '';
+      avail[d].forEach((w, wi) => {
+        const line = document.createElement('div');
+        line.className = 'win';
+
+        const a = document.createElement('input');
+        a.type = 'time'; a.value = w.from;
+        a.onchange = () => { w.from = a.value; paintSum(); };
+        line.appendChild(a);
+
+        const dash = document.createElement('span');
+        dash.className = 'wdash';
+        dash.textContent = '–';
+        line.appendChild(dash);
+
+        const b = document.createElement('input');
+        b.type = 'time'; b.value = w.to;
+        b.onchange = () => { w.to = b.value; paintSum(); };
+        line.appendChild(b);
+
+        const x = document.createElement('button');
+        x.type = 'button';
+        x.className = 'rm';
+        x.setAttribute('aria-label', 'Remove this window');
+        x.innerHTML = '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+        x.onclick = () => { avail[d].splice(wi, 1); drawWindows(); paintSum(); };
+        line.appendChild(x);
+
+        wins.appendChild(line);
+      });
+
+      if(avail[d].length < 3){
+        const add = document.createElement('button');
+        add.type = 'button';
+        add.className = 'addwin';
+        add.textContent = avail[d].length ? '+ Another window' : '+ Add availability';
+        add.onclick = () => {
+          avail[d].push(avail[d].length ? { from:'16:00', to:'18:00' }
+                                       : { from:'20:30', to:'02:00' });
+          drawWindows(); paintSum();
+        };
+        wins.appendChild(add);
+      }
+    };
+    drawWindows();
+    row.appendChild(wins);
+    card.appendChild(row);
+  });
+  content.appendChild(card);
+
+  const actions = document.createElement('div');
+  actions.className = 'actions';
+
+  const save = document.createElement('button');
+  save.className = 'ghost primary';
+  save.textContent = 'Save availability';
+  save.onclick = async () => {
+    const list = [];
+    let bad = null;
+    avail.forEach((wins, d) => wins.forEach(w => {
+      if(!w.from || !w.to){ bad = DOW_FULL[d] + ' has an empty time'; return; }
+      if(w.from === w.to){ bad = DOW_FULL[d] + ': a window cannot be zero length'; return; }
+      list.push({ day:d, from:w.from, to:w.to });
+    }));
+    if(bad){ toast(bad); return; }
+    if(!list.length){ toast('Set availability for at least one day'); return; }
+    toast('Saving…');
+    const r = await apiPost({action:'saveAvailability', list:list});
+    if(r.ok){ absorb(r.data); state.view = 'plan'; render(); toast('Availability saved'); }
+    else toast(r.error || 'Could not save');
+  };
+  actions.appendChild(save);
+
+  const back = document.createElement('button');
+  back.className = 'ghost';
+  back.textContent = 'Cancel';
+  back.onclick = () => { state.view = 'plan'; render(); };
+  actions.appendChild(back);
+  content.appendChild(actions);
+
+  const hint = document.createElement('p');
+  hint.className = 'subjnote';
+  hint.textContent = 'Applies to days generated from now on. '
+    + 'Use Reset this day to re-lay a day that already exists.';
+  content.appendChild(hint);
 }
 
 // ---------------------------------------------------------------- subjects page
@@ -1437,7 +1591,6 @@ function openSubjects(){
 function renderSubjects(){
   content.innerHTML = '';
   $('days').innerHTML = '';
-  $('startbar').hidden = true;
   $('kicker').textContent = 'Settings';
   $('title').textContent = 'Subjects';
   $('subtitle').textContent = 'What to plan, how many 30-minute slots a week, '
@@ -1766,6 +1919,7 @@ function absorb(data){
   state.settings = data.settings;
   state.bookmarks = data.bookmarks || {};
   state.subjects = data.subjects || [];
+  state.availability = data.availability || [[],[],[],[],[],[],[]];
   if(!state.selected) state.selected = data.today;
 }
 
