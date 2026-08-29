@@ -253,6 +253,10 @@ button.ghost.primary{background:var(--ink);border-color:var(--ink);color:#fff;fo
   font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--faint);
   letter-spacing:-.01em
 }
+.awork{margin-top:12px}
+.awork .stepper{align-self:flex-start}
+.awork .stepper b{min-width:34px}
+.asum.over{color:#A33B3A}
 .wins{display:flex;flex-direction:column;gap:7px;margin-top:11px}
 .win{display:flex;align-items:center;gap:7px}
 .win input{
@@ -743,7 +747,7 @@ const apiPost = payload => {
     case 'removeBlock': return call('apiRemoveBlock', payload.date, payload.id);
     case 'setSubject': return call('apiSetSubject', payload.date, payload.id, payload.subject);
     case 'saveSubjects': return call('apiSaveSubjects', payload.list);
-    case 'saveAvailability': return call('apiSaveAvailability', payload.list);
+    case 'saveAvailability': return call('apiSaveAvailability', payload.list, payload.budgets);
     default:         return Promise.resolve({ok:false, error:'unknown action'});
   }
 };
@@ -1426,8 +1430,10 @@ function render(){
  * is simply not planned. Edits are local until Save, like the subjects page.
  */
 let avail = null;
+let budgets = null;
 
 function openAvailability(){
+  budgets = (state.budgets || [0,0,0,0,0,0,0]).slice();
   const src = state.availability || [];
   avail = [0,1,2,3,4,5,6].map(d => (src[d] || []).map(w => ({
     from: fmt24(w.from), to: fmt24(w.to)
@@ -1447,8 +1453,9 @@ function renderAvailability(){
   $('days').innerHTML = '';
   $('kicker').textContent = 'Settings';
   $('title').textContent = 'Availability';
-  $('subtitle').textContent = 'When you are free each day. Blocks fill the first '
-    + 'window, then carry on in the next. An end before the start means past midnight.';
+  $('subtitle').textContent = 'When you are free each day, and how much work to '
+    + 'allocate. Blocks fill the first window, then carry on in the next. '
+    + 'An end before the start means past midnight.';
 
   const card = document.createElement('div');
   card.className = 'railcard subjcard';
@@ -1466,19 +1473,59 @@ function renderAvailability(){
 
     const sum = document.createElement('span');
     sum.className = 'asum';
+    const freeMins = () => avail[d].reduce((a, w) => {
+      let f = toMinC(w.from), t = toMinC(w.to);
+      if(t <= f) t += 1440;
+      return a + (t - f);
+    }, 0);
+    const hrs = m => (m % 60 ? (m/60).toFixed(1) : String(m/60)) + 'h';
     const paintSum = () => {
-      const mins = avail[d].reduce((a, w) => {
-        let f = toMinC(w.from), t = toMinC(w.to);
-        if(t <= f) t += 1440;
-        return a + (t - f);
-      }, 0);
-      sum.textContent = avail[d].length
-        ? (mins % 60 ? (mins/60).toFixed(1) : (mins/60)) + 'h free'
-        : 'not planned';
+      const free = freeMins();
+      if(!avail[d].length){ sum.textContent = 'not planned'; sum.classList.remove('over'); return; }
+      sum.textContent = hrs(free) + ' free';
+      // a target you have no room for is worth flagging, not silently clipping
+      const over = budgets[d] > 0 && budgets[d] > free;
+      sum.classList.toggle('over', over);
+      if(over) sum.textContent = hrs(free) + ' free · target exceeds it';
     };
     paintSum();
     top.appendChild(sum);
     row.appendChild(top);
+
+    const work = document.createElement('div');
+    work.className = 'field awork';
+    const wlab = document.createElement('span');
+    wlab.className = 'flabel';
+    wlab.textContent = 'Work to allocate';
+    work.appendChild(wlab);
+
+    const step = document.createElement('div');
+    step.className = 'stepper';
+    const wnum = document.createElement('b');
+    const wnote = document.createElement('i');
+    const paintWork = () => {
+      wnum.textContent = budgets[d] ? hrs(budgets[d]) : '—';
+      wnote.textContent = budgets[d] ? (budgets[d]/30) + ' slots' : 'whatever fits';
+      paintSum();
+    };
+    const wbtn = (label, delta) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = label;
+      b.setAttribute('aria-label', (delta < 0 ? 'Less' : 'More') + ' work on ' + DOW_FULL[d]);
+      b.onclick = () => {
+        budgets[d] = Math.max(0, Math.min(12*60, (budgets[d] || 0) + delta));
+        paintWork();
+      };
+      return b;
+    };
+    step.appendChild(wbtn('−', -30));
+    step.appendChild(wnum);
+    step.appendChild(wbtn('+', 30));
+    step.appendChild(wnote);
+    paintWork();                 // draw the initial value, not just on change
+    work.appendChild(step);
+    row.appendChild(work);
 
     const wins = document.createElement('div');
     wins.className = 'wins';
@@ -1551,7 +1598,7 @@ function renderAvailability(){
     if(bad){ toast(bad); return; }
     if(!list.length){ toast('Set availability for at least one day'); return; }
     toast('Saving…');
-    const r = await apiPost({action:'saveAvailability', list:list});
+    const r = await apiPost({action:'saveAvailability', list:list, budgets:budgets});
     if(r.ok){ absorb(r.data); state.view = 'plan'; render(); toast('Availability saved'); }
     else toast(r.error || 'Could not save');
   };
@@ -1920,6 +1967,7 @@ function absorb(data){
   state.bookmarks = data.bookmarks || {};
   state.subjects = data.subjects || [];
   state.availability = data.availability || [[],[],[],[],[],[],[]];
+  state.budgets = data.budgets || [0,0,0,0,0,0,0];
   if(!state.selected) state.selected = data.today;
 }
 
