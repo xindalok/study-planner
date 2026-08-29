@@ -1453,9 +1453,9 @@ function renderAvailability(){
   $('days').innerHTML = '';
   $('kicker').textContent = 'Settings';
   $('title').textContent = 'Availability';
-  $('subtitle').textContent = 'When you are free each day, and how much work to '
-    + 'allocate. Blocks fill the first window, then carry on in the next. '
-    + 'An end before the start means past midnight.';
+  $('subtitle').textContent = 'Windows say when work can go; the amount says how '
+    + 'much. With an amount set, that day is filled to it and split between its '
+    + 'subjects by their weekly slots. An end before the start means past midnight.';
 
   const card = document.createElement('div');
   card.className = 'railcard subjcard';
@@ -1505,7 +1505,7 @@ function renderAvailability(){
     const wnote = document.createElement('i');
     const paintWork = () => {
       wnum.textContent = budgets[d] ? hrs(budgets[d]) : '—';
-      wnote.textContent = budgets[d] ? (budgets[d]/30) + ' slots' : 'whatever fits';
+      wnote.textContent = budgets[d] ? (budgets[d]/30) + ' slots' : 'from weekly slots';
       paintSum();
     };
     const wbtn = (label, delta) => {
@@ -1640,8 +1640,9 @@ function renderSubjects(){
   $('days').innerHTML = '';
   $('kicker').textContent = 'Settings';
   $('title').textContent = 'Subjects';
-  $('subtitle').textContent = 'What to plan, how many 30-minute slots a week, '
-    + 'and which days they can fall on. More slots means a higher share of your week.';
+  $('subtitle').textContent = 'What to plan, and which days it can fall on. '
+    + 'Weekly slots set priority: on a day with a work target, subjects share it '
+    + 'in proportion to these numbers.';
 
   const card = document.createElement('div');
   card.className = 'railcard subjcard';
