@@ -156,10 +156,8 @@ h1{
   overflow:hidden;border:1px solid rgba(43,42,92,.07)
 }
 .block.focus .body{cursor:pointer}
-.block[data-subject="Vibecode App Dev"] .body{background:var(--appdev);color:var(--appdev-ink)}
-.block[data-subject="Fundamentals (JS/React)"] .body{background:var(--fund);color:var(--fund-ink)}
-.block[data-subject="Digital Cloud Leader"] .body{background:var(--cdl);color:var(--cdl-ink)}
-.block[data-subject="Korean"] .body{background:var(--korean);color:var(--korean-ink)}
+/* a focus block with no matching subject falls back to this */
+.block.focus .body{background:#EFECF2;color:#4A4358}
 
 /* Breaks are solid blocks, not gaps. A transparent dashed outline read as
    empty space, which made the column hard to parse. Quieter than the subject
@@ -194,6 +192,52 @@ h1{
   stroke-linejoin:round}
 .ed:hover{opacity:.85;background:rgba(43,42,92,.06)}
 
+/* ---------- subjects page ---------- */
+.subjcard{padding:18px 16px}
+.srow{padding:14px 0;border-bottom:1px solid var(--line-soft)}
+.srow:first-child{padding-top:2px}
+.srow:last-of-type{border-bottom:0;padding-bottom:4px}
+.srow-top{display:flex;align-items:center;gap:10px}
+.swatch{
+  flex:0 0 auto;width:26px;height:26px;border-radius:8px;padding:0;
+  border:1px solid rgba(43,42,92,.12);cursor:pointer
+}
+.sname{
+  flex:1;min-width:0;background:var(--canvas);border:1px solid var(--hair);
+  color:var(--ink);border-radius:9px;padding:9px 11px;
+  font-family:inherit;font-size:15px;font-weight:500
+}
+.sname:focus{outline:2px solid var(--ink);outline-offset:1px}
+.srow-ctl{display:flex;align-items:center;gap:12px;margin-top:10px;flex-wrap:wrap}
+.stepper{
+  flex:0 0 auto;display:inline-flex;align-items:center;gap:2px;
+  background:var(--panel);border:1px solid var(--hair);border-radius:9px;padding:3px
+}
+.stepper button{
+  width:28px;height:28px;border:0;background:transparent;cursor:pointer;
+  font-size:16px;line-height:1;color:var(--ink);border-radius:6px;padding:0
+}
+.stepper button:active{background:rgba(43,42,92,.08)}
+.stepper b{
+  min-width:20px;text-align:center;font-family:'JetBrains Mono',monospace;
+  font-size:14px;font-weight:600
+}
+.stepper i{
+  font-style:normal;font-family:'JetBrains Mono',monospace;font-size:10.5px;
+  color:var(--muted);padding:0 8px 0 4px
+}
+.chips{display:flex;gap:5px;flex:1 1 auto}
+.chip{
+  flex:1 1 0;min-width:30px;height:32px;border-radius:8px;cursor:pointer;
+  background:var(--panel);border:1px solid var(--hair);color:var(--muted);
+  font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:600;padding:0
+}
+.chip.on{background:var(--ink);border-color:var(--ink);color:#fff}
+.chip:active{transform:scale(.94)}
+.addsubj{width:100%;margin-top:12px}
+.subjnote{margin:12px 2px 0;font-size:12px;color:var(--muted);line-height:1.5}
+button.ghost.primary{background:var(--ink);border-color:var(--ink);color:#fff;font-weight:500}
+
 /* subject presets inside the sheet */
 .subjects{display:flex;flex-wrap:wrap;gap:7px}
 .subj{
@@ -203,10 +247,6 @@ h1{
 }
 .subj:active{background:#EFEAF0}
 .subj.on{border-color:var(--ink);font-weight:600}
-.subj[data-subject="Vibecode App Dev"]{background:var(--appdev);color:var(--appdev-ink)}
-.subj[data-subject="Fundamentals (JS/React)"]{background:var(--fund);color:var(--fund-ink)}
-.subj[data-subject="Digital Cloud Leader"]{background:var(--cdl);color:var(--cdl-ink)}
-.subj[data-subject="Korean"]{background:var(--korean);color:var(--korean-ink)}
 
 /* remove control — quiet like the grip until you reach for it */
 .rm{
@@ -565,6 +605,10 @@ const BOOTSTRAP = <?!= bootstrap ?>;
 // failure to install it is visible rather than discovered weeks later
 const TRIGGER_OK = <?!= trigger ?>;
 
+// TEMPORARY: id of this page load, so the browser-side timing can be reported
+// back into the Diag sheet. Remove with the DIAGNOSTICS block in Code.gs.
+const DIAG_ID = <?!= diagId ?>;
+
 // 1.5px/min keeps the whole evening on one screen — at 2px/min the second
 // subject fell below the fold. Breaks are 15px, which is legible now that they
 // have a solid fill. Heights stay strictly proportional to the gridlines.
@@ -631,7 +675,7 @@ function layout(day){
 }
 
 // ---------------------------------------------------------------- state
-let state = { days: [], today: null, settings: {}, bookmarks: {}, selected: null };
+let state = { days: [], today: null, settings: {}, bookmarks: {}, subjects: [], selected: null, view: 'plan' };
 
 const $ = id => document.getElementById(id);
 const content = $('content');
@@ -672,6 +716,7 @@ const apiPost = payload => {
     case 'unblock':   return call('apiUnblock', payload.date, payload.id);
     case 'removeBlock': return call('apiRemoveBlock', payload.date, payload.id);
     case 'setSubject': return call('apiSetSubject', payload.date, payload.id, payload.subject);
+    case 'saveSubjects': return call('apiSaveSubjects', payload.list);
     default:         return Promise.resolve({ok:false, error:'unknown action'});
   }
 };
@@ -723,8 +768,24 @@ const isBreak = k => k === 'short_break' || k === 'long_break';
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 // mirrors PRIMARY_ROTATING + SECONDARY_BY_WEEKDAY in Code.gs; these are the
 // subjects the generator produces, offered as one-tap presets
-const SUBJECTS = ['Vibecode App Dev','Fundamentals (JS/React)',
-                  'Digital Cloud Leader','Korean'];
+// Five palette slots — a subject stores an index, so colour survives renaming.
+const PALETTE = [
+  { bg:'#B8E6D5', ink:'#0B4436', name:'Mint'  },
+  { bg:'#C5DEF5', ink:'#123A5C', name:'Sky'   },
+  { bg:'#FBD9A8', ink:'#5C3A05', name:'Peach' },
+  { bg:'#F9C6D3', ink:'#72243E', name:'Pink'  },
+  { bg:'#D8CCEE', ink:'#3C3489', name:'Lilac' }
+];
+const MAX_SUBJECTS = 5;
+const MAX_SLOTS = 8;
+const DOW = ['S','M','T','W','T','F','S'];
+const DOW_FULL = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+
+/** Palette entry for a subject name, or null when it is not in the list. */
+function paletteFor(name){
+  const s = (state.subjects || []).find(x => x.name === name);
+  return s ? PALETTE[s.colour] || PALETTE[0] : null;
+}
 
 /**
  * A focus block and the break immediately after it form one group, so a delay
@@ -814,10 +875,14 @@ function blockEl(b, editable, at){
     + ' ' + b.kind + (b.done ? ' done' : '');
   el.dataset.id = b.id;
   if(b.subject) el.dataset.subject = b.subject;
+  // colour comes from the subject list, so renaming or re-colouring a subject
+  // is reflected without touching CSS
+  const pal = b.kind === 'focus' ? paletteFor(b.subject) : null;
   el.style.height = blockHeight(b) + 'px';
 
   const body = document.createElement('div');
   body.className = 'body';
+  if(pal){ body.style.background = pal.bg; body.style.color = pal.ink; }
 
   if(b.kind === 'focus'){
     const tick = document.createElement('div');
@@ -1007,13 +1072,15 @@ function openSubject(date, id, current){
 
   const list = document.createElement('div');
   list.className = 'subjects';
-  SUBJECTS.forEach(name => {
+  (state.subjects || []).forEach(sub => {
     const b = document.createElement('button');
-    b.className = 'subj' + (name === current ? ' on' : '');
+    b.className = 'subj' + (sub.name === current ? ' on' : '');
     b.type = 'button';
-    b.dataset.subject = name;
-    b.textContent = name;
-    b.onclick = () => apply(name);
+    b.textContent = sub.name;
+    const pal = PALETTE[sub.colour] || PALETTE[0];
+    b.style.background = pal.bg;
+    b.style.color = pal.ink;
+    b.onclick = () => apply(sub.name);
     list.appendChild(b);
   });
   card.appendChild(list);
@@ -1021,7 +1088,7 @@ function openSubject(date, id, current){
   const other = document.createElement('input');
   other.type = 'text';
   other.placeholder = 'Something else…';
-  other.value = SUBJECTS.indexOf(current) === -1 ? current : '';
+  other.value = (state.subjects || []).some(x => x.name === current) ? '' : current;
   card.appendChild(other);
 
   const row = document.createElement('div');
@@ -1196,6 +1263,7 @@ function muteButton(){
 }
 
 function render(){
+  if(state.view === 'subjects'){ renderSubjects(); return; }
   const day = dayById(state.selected) || dayById(state.today) || state.days[0];
   if(!day){
     content.innerHTML = '<div class="msg">No schedule yet. Run firstTimeSetup in Apps Script, then refresh.</div>';
@@ -1297,8 +1365,182 @@ function render(){
   refresh.onclick = load;
   actions.appendChild(refresh);
 
+  const subj = document.createElement('button');
+  subj.className = 'ghost';
+  subj.textContent = 'Subjects';
+  subj.onclick = openSubjects;
+  actions.appendChild(subj);
+
   actions.appendChild(muteButton());   // right edge of the same row
   content.appendChild(actions);
+}
+
+// ---------------------------------------------------------------- subjects page
+/**
+ * Plan what you study, rather than which blocks exist on one night.
+ * Editing is local until you press Save — a day-chip tap is not worth a round
+ * trip, and a half-typed name should never reach the sheet.
+ */
+let draft = null;
+
+function openSubjects(){
+  draft = (state.subjects || []).map(s => ({
+    name: s.name, colour: s.colour, slots: s.slots, days: s.days.slice()
+  }));
+  if(!draft.length) draft.push({ name:'', colour:0, slots:3, days:[] });
+  state.view = 'subjects';
+  render();
+}
+
+function renderSubjects(){
+  content.innerHTML = '';
+  $('days').innerHTML = '';
+  $('startbar').hidden = true;
+  $('kicker').textContent = 'Settings';
+  $('title').textContent = 'Subjects';
+  $('subtitle').textContent = 'What to plan, how many 30-minute slots, and which days.';
+
+  const card = document.createElement('div');
+  card.className = 'railcard subjcard';
+
+  draft.forEach((sub, i) => {
+    const row = document.createElement('div');
+    row.className = 'srow';
+
+    const top = document.createElement('div');
+    top.className = 'srow-top';
+
+    const sw = document.createElement('button');
+    sw.type = 'button';
+    sw.className = 'swatch';
+    sw.title = 'Colour';
+    const paint = () => {
+      const p = PALETTE[sub.colour] || PALETTE[0];
+      sw.style.background = p.bg;
+      sw.setAttribute('aria-label', 'Colour: ' + p.name + '. Tap to change.');
+    };
+    sw.onclick = () => { sub.colour = (sub.colour + 1) % PALETTE.length; paint(); };
+    paint();
+    top.appendChild(sw);
+
+    const name = document.createElement('input');
+    name.type = 'text';
+    name.className = 'sname';
+    name.placeholder = 'Subject name';
+    name.value = sub.name;
+    name.maxLength = 40;
+    name.oninput = () => { sub.name = name.value; };
+    top.appendChild(name);
+
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'rm';
+    del.title = 'Remove subject';
+    del.setAttribute('aria-label', 'Remove this subject');
+    del.innerHTML = '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+    del.onclick = () => { draft.splice(i, 1); if(!draft.length) draft.push({name:'',colour:0,slots:3,days:[]}); render(); };
+    top.appendChild(del);
+    row.appendChild(top);
+
+    const ctl = document.createElement('div');
+    ctl.className = 'srow-ctl';
+
+    const slots = document.createElement('div');
+    slots.className = 'stepper';
+    const mk = (label, delta) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = label;
+      b.setAttribute('aria-label', (delta < 0 ? 'Fewer' : 'More') + ' slots');
+      b.onclick = () => {
+        sub.slots = Math.max(1, Math.min(MAX_SLOTS, sub.slots + delta));
+        num.textContent = sub.slots;
+        mins.textContent = (sub.slots * 30) + 'min';
+      };
+      return b;
+    };
+    const num = document.createElement('b');
+    num.textContent = sub.slots;
+    const mins = document.createElement('i');
+    mins.textContent = (sub.slots * 30) + 'min';
+    slots.appendChild(mk('−', -1));
+    slots.appendChild(num);
+    slots.appendChild(mk('+', 1));
+    slots.appendChild(mins);
+    ctl.appendChild(slots);
+
+    const chips = document.createElement('div');
+    chips.className = 'chips';
+    DOW.forEach((d, idx) => {
+      const c = document.createElement('button');
+      c.type = 'button';
+      c.className = 'chip' + (sub.days.indexOf(idx) !== -1 ? ' on' : '');
+      c.textContent = d;
+      c.setAttribute('aria-label', DOW_FULL[idx]);
+      c.setAttribute('aria-pressed', String(sub.days.indexOf(idx) !== -1));
+      c.onclick = () => {
+        const at = sub.days.indexOf(idx);
+        if(at === -1) sub.days.push(idx); else sub.days.splice(at, 1);
+        c.classList.toggle('on', at === -1);
+        c.setAttribute('aria-pressed', String(at === -1));
+      };
+      chips.appendChild(c);
+    });
+    ctl.appendChild(chips);
+    row.appendChild(ctl);
+    card.appendChild(row);
+  });
+
+  if(draft.length < MAX_SUBJECTS){
+    const add = document.createElement('button');
+    add.type = 'button';
+    add.className = 'ghost addsubj';
+    add.textContent = '+ Add subject';
+    add.onclick = () => {
+      draft.push({ name:'', colour: draft.length % PALETTE.length, slots:3, days:[] });
+      render();
+    };
+    card.appendChild(add);
+  } else {
+    const note = document.createElement('p');
+    note.className = 'subjnote';
+    note.textContent = 'Five is the maximum.';
+    card.appendChild(note);
+  }
+  content.appendChild(card);
+
+  const actions = document.createElement('div');
+  actions.className = 'actions';
+
+  const save = document.createElement('button');
+  save.className = 'ghost primary';
+  save.textContent = 'Save subjects';
+  save.onclick = async () => {
+    const clean = draft.filter(x => x.name.trim());
+    if(!clean.length){ toast('Give at least one subject a name'); return; }
+    toast('Saving…');
+    const r = await apiPost({action:'saveSubjects', list: clean});
+    if(r.ok){
+      absorb(r.data);
+      state.view = 'plan';
+      render();
+      toast('Subjects saved');
+    } else toast(r.error || 'Could not save');
+  };
+  actions.appendChild(save);
+
+  const back = document.createElement('button');
+  back.className = 'ghost';
+  back.textContent = 'Cancel';
+  back.onclick = () => { state.view = 'plan'; render(); };
+  actions.appendChild(back);
+  content.appendChild(actions);
+
+  const hint = document.createElement('p');
+  hint.className = 'subjnote';
+  hint.textContent = 'Changes apply to days generated from now on. '
+    + 'Use Reset this day to rebuild a day that already exists.';
+  content.appendChild(hint);
 }
 
 // ---------------------------------------------------------------- drag to reorder
@@ -1457,6 +1699,7 @@ function absorb(data){
   state.today = data.today;
   state.settings = data.settings;
   state.bookmarks = data.bookmarks || {};
+  state.subjects = data.subjects || [];
   if(!state.selected) state.selected = data.today;
 }
 
@@ -1610,6 +1853,24 @@ function tickTimer(){
 
 tickTimer();
 setInterval(tickTimer, 1000);
+
+// ---------------------------------------------------------------- diag
+// TEMPORARY. Reports how long the browser took, which the server cannot see,
+// plus which device this was — the phone and the laptop write separate rows,
+// so the two can be compared directly. Remove with the DIAGNOSTICS block in
+// Code.gs. Fire and forget: a failure here must never affect the page.
+try {
+  window.addEventListener('load', function(){
+    let ms = Math.round(performance.now());
+    try {
+      const nav = performance.getEntriesByType('navigation')[0];
+      if (nav && nav.duration) ms = Math.round(nav.duration);
+    } catch (e) {}
+    const device = (window.innerWidth < 700 ? 'mobile' : 'desktop') +
+                   ' ' + Math.round(window.innerWidth) + 'px';
+    google.script.run.diagClient(DIAG_ID, ms, device);
+  });
+} catch (e) {}
 </script>
 </body>
 </html>
