@@ -193,49 +193,73 @@ h1{
 .ed:hover{opacity:.85;background:rgba(43,42,92,.06)}
 
 /* ---------- subjects page ---------- */
-.subjcard{padding:18px 16px}
-.srow{padding:14px 0;border-bottom:1px solid var(--line-soft)}
-.srow:first-child{padding-top:2px}
-.srow:last-of-type{border-bottom:0;padding-bottom:4px}
-.srow-top{display:flex;align-items:center;gap:10px}
+.subjcard{padding:14px;background:transparent;border:0}
+
+/* Each subject is its own card carrying its colour on the left edge, so the
+   list reads as five distinct things rather than one dense form. */
+.srow{
+  background:var(--paper);border:1px solid var(--hair);
+  border-left:4px solid var(--hair);border-radius:12px;
+  padding:14px 15px;margin-bottom:10px
+}
+.srow-top{display:flex;align-items:center;gap:11px}
 .swatch{
-  flex:0 0 auto;width:26px;height:26px;border-radius:8px;padding:0;
-  border:1px solid rgba(43,42,92,.12);cursor:pointer
+  flex:0 0 auto;width:22px;height:22px;border-radius:7px;padding:0;
+  border:1px solid rgba(43,42,92,.14);cursor:pointer
 }
+/* the name is the subject's identity — it should read as a heading, not a field */
 .sname{
-  flex:1;min-width:0;background:var(--canvas);border:1px solid var(--hair);
-  color:var(--ink);border-radius:9px;padding:9px 11px;
-  font-family:inherit;font-size:15px;font-weight:500
+  flex:1;min-width:0;background:transparent;border:0;border-bottom:1px solid transparent;
+  color:var(--ink);border-radius:0;padding:2px 0;
+  font-family:inherit;font-size:17px;font-weight:600;letter-spacing:-.01em
 }
-.sname:focus{outline:2px solid var(--ink);outline-offset:1px}
-.srow-ctl{display:flex;align-items:center;gap:12px;margin-top:10px;flex-wrap:wrap}
+.sname:hover{border-bottom-color:var(--hair)}
+.sname:focus{outline:0;border-bottom-color:var(--ink)}
+.sname::placeholder{color:var(--faint);font-weight:500}
+
+.srow-ctl{display:flex;align-items:flex-end;gap:18px;margin-top:14px;flex-wrap:wrap}
+.field{display:flex;flex-direction:column;gap:6px}
+.field.grow{flex:1 1 300px;min-width:0}
+.flabel{
+  font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--faint)
+}
+
 .stepper{
-  flex:0 0 auto;display:inline-flex;align-items:center;gap:2px;
+  display:inline-flex;align-items:center;gap:2px;
   background:var(--panel);border:1px solid var(--hair);border-radius:9px;padding:3px
 }
 .stepper button{
-  width:28px;height:28px;border:0;background:transparent;cursor:pointer;
-  font-size:16px;line-height:1;color:var(--ink);border-radius:6px;padding:0
+  width:26px;height:26px;border:0;background:transparent;cursor:pointer;
+  font-size:15px;line-height:1;color:var(--ink);border-radius:6px;padding:0
 }
 .stepper button:active{background:rgba(43,42,92,.08)}
 .stepper b{
-  min-width:20px;text-align:center;font-family:'JetBrains Mono',monospace;
-  font-size:14px;font-weight:600
+  min-width:18px;text-align:center;font-family:'JetBrains Mono',monospace;
+  font-size:13.5px;font-weight:600
 }
 .stepper i{
-  font-style:normal;font-family:'JetBrains Mono',monospace;font-size:10.5px;
-  color:var(--muted);padding:0 8px 0 4px
+  font-style:normal;font-family:'JetBrains Mono',monospace;font-size:10px;
+  color:var(--muted);padding:0 8px 0 5px
 }
-.chips{display:flex;gap:5px;flex:1 1 auto}
+
+/* Chips carry the selection in pastel orange rather than solid navy — 28 dark
+   rectangles dominated the page and buried the subject names. */
+.chips{display:flex;gap:5px;flex-wrap:wrap}
 .chip{
-  flex:1 1 0;min-width:30px;height:32px;border-radius:8px;cursor:pointer;
-  background:var(--panel);border:1px solid var(--hair);color:var(--muted);
-  font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:600;padding:0
+  flex:1 1 0;min-width:42px;height:30px;border-radius:8px;cursor:pointer;padding:0;
+  background:var(--panel);border:1px solid var(--hair);color:var(--faint);
+  font-family:inherit;font-size:12px;font-weight:500;
+  transition:background .12s,color .12s,border-color .12s
 }
-.chip.on{background:var(--ink);border-color:var(--ink);color:#fff}
-.chip:active{transform:scale(.94)}
-.addsubj{width:100%;margin-top:12px}
-.subjnote{margin:12px 2px 0;font-size:12px;color:var(--muted);line-height:1.5}
+.chip:hover{border-color:var(--muted);color:var(--muted)}
+.chip.on{
+  background:#FDE3BE;border-color:#EDC183;color:#7A4E0B;font-weight:600
+}
+.chip:active{transform:scale(.95)}
+
+.addsubj{width:100%;margin-top:2px}
+.subjnote{margin:12px 4px 0;font-size:12px;color:var(--muted);line-height:1.5}
 button.ghost.primary{background:var(--ink);border-color:var(--ink);color:#fff;font-weight:500}
 
 /* subject presets inside the sheet */
@@ -778,7 +802,7 @@ const PALETTE = [
 ];
 const MAX_SUBJECTS = 5;
 const MAX_SLOTS = 8;
-const DOW = ['S','M','T','W','T','F','S'];
+const DOW = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 const DOW_FULL = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
 
 /** Palette entry for a subject name, or null when it is not in the list. */
@@ -1406,6 +1430,8 @@ function renderSubjects(){
   draft.forEach((sub, i) => {
     const row = document.createElement('div');
     row.className = 'srow';
+    const rp = PALETTE[sub.colour] || PALETTE[0];
+    row.style.borderLeftColor = rp.bg;
 
     const top = document.createElement('div');
     top.className = 'srow-top';
@@ -1445,6 +1471,13 @@ function renderSubjects(){
     const ctl = document.createElement('div');
     ctl.className = 'srow-ctl';
 
+    const slotWrap = document.createElement('div');
+    slotWrap.className = 'field';
+    const slotLab = document.createElement('span');
+    slotLab.className = 'flabel';
+    slotLab.textContent = 'Slots per day';
+    slotWrap.appendChild(slotLab);
+
     const slots = document.createElement('div');
     slots.className = 'stepper';
     const mk = (label, delta) => {
@@ -1467,7 +1500,15 @@ function renderSubjects(){
     slots.appendChild(num);
     slots.appendChild(mk('+', 1));
     slots.appendChild(mins);
-    ctl.appendChild(slots);
+    slotWrap.appendChild(slots);
+    ctl.appendChild(slotWrap);
+
+    const dayWrap = document.createElement('div');
+    dayWrap.className = 'field grow';
+    const dayLab = document.createElement('span');
+    dayLab.className = 'flabel';
+    dayLab.textContent = 'Days';
+    dayWrap.appendChild(dayLab);
 
     const chips = document.createElement('div');
     chips.className = 'chips';
@@ -1486,7 +1527,8 @@ function renderSubjects(){
       };
       chips.appendChild(c);
     });
-    ctl.appendChild(chips);
+    dayWrap.appendChild(chips);
+    ctl.appendChild(dayWrap);
     row.appendChild(ctl);
     card.appendChild(row);
   });
